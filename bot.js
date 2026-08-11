@@ -13,6 +13,10 @@ const TU_NUMERO_PERSONAL = process.env.TU_NUMERO_PERSONAL || "5493812385889";
 // Método de vinculación: 'CODE' para código de 8 dígitos, 'QR' para código QR
 const METODO_VINCULACION = process.env.METODO_VINCULACION || 'CODE'; 
 
+// MEMORIA EN VIVO PARA LOS FILTROS
+const chatsActivosProvisionales = new Set();
+const chatsPausados = new Set();
+
 async function iniciarBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
@@ -60,24 +64,89 @@ async function iniciarBot() {
         }
     });
 
-    // 4. PROCESAMIENTO Y REENVIÓ DE MENSAJES (WEBHOOK A PYTHON)
+    // 4. PROCESAMIENTO Y REENVIÓ DE MENSAJES CON FILTROS INTELIGENTES
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
 
         for (const msg of messages) {
-            // Ignorar mensajes enviados por el propio bot o sin contenido
-            if (!msg.message || msg.key.fromMe) continue;
+            if (!msg.message) continue;
 
             const sender = msg.key.remoteJid;
-            const textMessage = msg.message?.conversation || 
-                                msg.message?.extendedTextMessage?.text || '';
+            const fromMe = msg.key.fromMe;
+            const textMessage = (
+                msg.message?.conversation || 
+                msg.message?.extendedTextMessage?.text || 
+                ''
+            ).trim();
 
             if (!textMessage) continue;
+            const textoMinuscula = textMessage.toLowerCase();
 
-            console.log(`💬 Mensaje entrante de ${sender}: ${textMessage}`);
+            // ------------------------------------------------------------------
+            // ⛔ 1. COMANDOS DESDE TU PROPIO CELULAR (fromMe === true)
+            // ------------------------------------------------------------------
+            if (fromMe) {
+                // Frase clave para habilitar a Gabriela en la charla con un amigo
+                if (textoMinuscula.includes('ok, te dejo con gabriela') || textoMinuscula === '!activar') {
+                    chatsActivosProvisionales.add(sender);
+                    chatsPausados.delete(sender);
+                    await sock.sendMessage(sender, { 
+                        text: '🤖 *Gabriela:* ¡Hola! Soy la asistente virtual de Brunilda S.A.S. ¿En qué te puedo ayudar con el crédito?' 
+                    });
+                    console.log(`✅ Gabriela activada manualmente para: ${sender}`);
+                    return;
+                }
+
+                // Comando para pausar al bot en cualquier conversación
+                if (textoMinuscula === '!pausa') {
+                    chatsPausados.add(sender);
+                    chatsActivosProvisionales.delete(sender);
+                    await sock.sendMessage(sender, { 
+                        text: '🛑 *Gabriela ha sido pausada en esta conversación.*' 
+                    });
+                    console.log(`🛑 Gabriela pausada manualmente para: ${sender}`);
+                    return;
+                }
+
+                continue; // Si enviaste vos otro mensaje normal, no procesamos webhook
+            }
+
+            // ------------------------------------------------------------------
+            // ⛔ 2. MENSAJES RECIBIDOS DE OTRAS PERSONAS
+            // ------------------------------------------------------------------
+
+            // Filtro A: Si el chat está pausado manualmente -> Ignorar
+            if (chatsPausados.has(sender)) {
+                console.log(`🛑 Chat ${sender} pausado. Ignorando mensaje.`);
+                continue;
+            }
+
+            // Filtro B: Amigos / Contactos Agendados
+            // Si el nombre viene en los datos del mensaje, Baileys detecta que es un contacto conocido
+            const esContactoAgendado = Boolean(msg.pushName && msg.verifiedBizName === undefined);
+            
+            if (esContactoAgendado && !chatsActivosProvisionales.has(sender)) {
+                console.log(`👤 Mensaje de contacto conocido (${msg.pushName}). Ignorando para que hables vos.`);
+                continue; 
+            }
+
+            // Filtro C: Palabras clave para números DESCONOCIDOS (no agendados)
+            if (!chatsActivosProvisionales.has(sender)) {
+                const palabrasClave = ['hola', 'prestamo', 'préstamo', 'credito', 'crédito', 'requisitos', 'insumos', 'info'];
+                const esConsultaValida = palabrasClave.some(palabra => textoMinuscula.includes(palabra));
+
+                if (!esConsultaValida) {
+                    console.log(`❓ Desconocido (${sender}) envió mensaje sin palabras clave. Ignorando.`);
+                    continue; // Ignorar spam/stickers/mensajes fuera de tema
+                }
+            }
+
+            // ------------------------------------------------------------------
+            // 🤖 3. CONEXIÓN A LA API DE PYTHON (FASTAPI EN RAILWAY)
+            // ------------------------------------------------------------------
+            console.log(`💬 Procesando mensaje válido de ${sender}: ${textMessage}`);
 
             try {
-                // Enviar el mensaje a la API de Gabriela (Python/FastAPI) en Railway
                 const response = await axios.post(RAILWAY_WEBHOOK_URL, {
                     sender: sender,
                     message: textMessage
@@ -85,12 +154,12 @@ async function iniciarBot() {
 
                 const data = response.data;
 
-                // Responderle al cliente con el mensaje procesado por Gabriela
+                // Responderle al cliente con lo que respondió Gabriela
                 if (data && data.respuesta_bot) {
                     await sock.sendMessage(sender, { text: data.respuesta_bot });
                 }
 
-                // SI EL CLIENTE LLEGÓ AL ESTADO 4 (DISPARO DE ALERTA A TU WHATSAPP PERSONAL)
+                // Disparo de Alerta a tu WhatsApp Personal al llegar al Estado 5
                 if (data && data.estado_siguiente === 5) {
                     const jidPersonal = `${TU_NUMERO_PERSONAL}@s.whatsapp.net`;
                     await sock.sendMessage(jidPersonal, {
