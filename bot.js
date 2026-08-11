@@ -3,17 +3,14 @@ const qrcode = require('qrcode-terminal');
 const axios = require('axios');
 const pino = require('pino');
 
-// 1. CONFIGURACIÓN GENERAL CON TUS DATOS CARGADOS
+// 1. CONFIGURACIÓN GENERAL
 const RAILWAY_WEBHOOK_URL = process.env.RAILWAY_WEBHOOK_URL || 'https://gabriela-loan-api-production.up.railway.app/webhook';
 
-// Configuración de teléfonos (Formato internacional sin +)
 const NUMERO_BOT_WHATSAPP = process.env.NUMERO_BOT || "5493812385889"; 
 const TU_NUMERO_PERSONAL = process.env.TU_NUMERO_PERSONAL || "5493812385889"; 
-
-// Método de vinculación: 'CODE' para código de 8 dígitos, 'QR' para código QR
 const METODO_VINCULACION = process.env.METODO_VINCULACION || 'CODE'; 
 
-// MEMORIA EN VIVO PARA LOS FILTROS
+// MEMORIA EN VIVO PARA LOS FILTROS Y MÉTRICAS LOCALES
 const chatsActivosProvisionales = new Set();
 const chatsPausados = new Set();
 
@@ -29,7 +26,7 @@ async function iniciarBot() {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // 2. CONTROL DE CONEXIÓN Y SOLICITUD DE CÓDIGO CON TIMEOUT ESTABILIZADOR
+    // 2. CONTROL DE CONEXIÓN
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
@@ -49,7 +46,7 @@ async function iniciarBot() {
         }
     });
 
-    // Solicitud del código de 8 dígitos con delay de 4 segundos
+    // SOLICITUD DE CÓDIGO CON TIMEOUT STABLE
     if (!sock.authState.creds.registered && METODO_VINCULACION === 'CODE') {
         setTimeout(async () => {
             try {
@@ -63,7 +60,7 @@ async function iniciarBot() {
         }, 4000);
     }
 
-    // 3. PROCESAMIENTO Y REENVIÓ DE MENSAJES CON FILTROS INTELIGENTES
+    // 3. PROCESAMIENTO DE MENSAJES Y FILTROS
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
 
@@ -82,9 +79,32 @@ async function iniciarBot() {
             const textoMinuscula = textMessage.toLowerCase();
 
             // ------------------------------------------------------------------
-            // ⛔ 1. COMANDOS DESDE TU PROPIO CELULAR (fromMe === true)
+            // 👑 1. COMANDOS DEL ADMINISTRADOR / PROPIETARIO (fromMe === true)
             // ------------------------------------------------------------------
             if (fromMe) {
+                // Comando de consulta de métricas y rendimiento
+                if (textoMinuscula === '!metricas' || textoMinuscula === '!stats') {
+                    try {
+                        const res = await axios.get(`${RAILWAY_WEBHOOK_URL}/metricas`);
+                        const m = res.data;
+                        await sock.sendMessage(sender, {
+                            text: `📊 *REPORTE DE GESTIÓN CREDITICIA - BRUNILDA S.A.S.*\n\n` +
+                                  `⚡ *Créditos Aprobados Hoy:* ${m.aprobados_hoy || 0}\n` +
+                                  `📅 *Aprobados esta Semana:* ${m.aprobados_semana || 0}\n` +
+                                  `🗓️ *Aprobados este Mes:* ${m.aprobados_mes || 0}\n\n` +
+                                  `🔄 *Clientes Habituales/Reincidentes:* ${m.clientes_habituales || 0}\n` +
+                                  `⏳ *Solicitudes en Evaluación:* ${m.en_proceso || 0}\n\n` +
+                                  `_Sistema Gabriela & Julián 1.5 Operativo 24/7_`
+                        });
+                    } catch (e) {
+                        await sock.sendMessage(sender, { 
+                            text: `📊 *MÉTRICAS DEL SISTEMA*\n\nGabriela está procesando solicitudes activas. Consultá la consola de Railway o ejecutá nuevamente en unos minutos.` 
+                        });
+                    }
+                    return;
+                }
+
+                // Activar a Gabriela en la conversación actual
                 if (textoMinuscula.includes('ok, te dejo con gabriela') || textoMinuscula === '!activar') {
                     chatsActivosProvisionales.add(sender);
                     chatsPausados.delete(sender);
@@ -95,6 +115,7 @@ async function iniciarBot() {
                     return;
                 }
 
+                // Pausar al bot
                 if (textoMinuscula === '!pausa') {
                     chatsPausados.add(sender);
                     chatsActivosProvisionales.delete(sender);
@@ -105,38 +126,32 @@ async function iniciarBot() {
                     return;
                 }
 
+                // Si mandás otro mensaje normal, no se procesa como consulta a la API
                 continue;
             }
 
             // ------------------------------------------------------------------
-            // ⛔ 2. MENSAJES RECIBIDOS DE OTRAS PERSONAS
+            // 👥 2. FILTROS PARA CLIENTES Y CONSULTAS EXTERNAS
             // ------------------------------------------------------------------
             if (chatsPausados.has(sender)) {
                 console.log(`🛑 Chat ${sender} pausado. Ignorando mensaje.`);
                 continue;
             }
 
-            const esContactoAgendado = Boolean(msg.pushName && msg.verifiedBizName === undefined);
-            
-            if (esContactoAgendado && !chatsActivosProvisionales.has(sender)) {
-                console.log(`👤 Mensaje de contacto conocido (${msg.pushName}). Ignorando para que hables vos.`);
-                continue; 
-            }
+            // Palabras clave para detectar solicitudes de crédito directas
+            const palabrasClave = ['hola', 'prestamo', 'préstamo', 'credito', 'crédito', 'requisitos', 'insumos', 'info', 'mercaderia', 'mercadería', 'solicitar'];
+            const esConsultaValida = palabrasClave.some(palabra => textoMinuscula.includes(palabra));
 
-            if (!chatsActivosProvisionales.has(sender)) {
-                const palabrasClave = ['hola', 'prestamo', 'préstamo', 'credito', 'crédito', 'requisitos', 'insumos', 'info', 'mercaderia', 'mercadería'];
-                const esConsultaValida = palabrasClave.some(palabra => textoMinuscula.includes(palabra));
-
-                if (!esConsultaValida) {
-                    console.log(`❓ Desconocido (${sender}) envió mensaje sin palabras clave. Ignorando.`);
-                    continue;
-                }
+            // Si no es un chat activado previamente y tampoco incluye palabras clave, se ignora
+            if (!chatsActivosProvisionales.has(sender) && !esConsultaValida) {
+                console.log(`❓ Mensaje sin palabras clave de (${sender}). Ignorando.`);
+                continue;
             }
 
             // ------------------------------------------------------------------
-            // 🤖 3. CONEXIÓN A LA API DE PYTHON (FASTAPI EN RAILWAY)
+            // 🤖 3. COMUNICACIÓN CON LA API EN RAILWAY
             // ------------------------------------------------------------------
-            console.log(`💬 Procesando mensaje válido de ${sender}: ${textMessage}`);
+            console.log(`💬 Procesando solicitud válida de ${sender}: "${textMessage}"`);
 
             try {
                 const response = await axios.post(RAILWAY_WEBHOOK_URL, {
@@ -150,14 +165,15 @@ async function iniciarBot() {
                     await sock.sendMessage(sender, { text: data.respuesta_bot });
                 }
 
+                // Notificación de aprobación lista al WhatsApp Personal
                 if (data && data.estado_siguiente === 5) {
                     const jidPersonal = `${TU_NUMERO_PERSONAL}@s.whatsapp.net`;
                     await sock.sendMessage(jidPersonal, {
                         text: `🚨 *SOLICITUD LISTA PARA DESEMBOLSO*\n\n` +
                               `👤 *Cliente:* ${sender.replace('@s.whatsapp.net', '')}\n` +
-                              `📄 *Contrato:* Firmado y Auditado por Julián 1.5\n` +
-                              `📍 *Insumos/Comercio:* Validado por Gabriela\n` +
-                              `📲 *Alias/Datos:* Procesados por la API\n\n` +
+                              `📄 *Contrato:* Auditado por Julián 1.5\n` +
+                              `🛒 *Insumos:* Validado por Gabriela\n` +
+                              `🔁 *Tipo:* ${data.es_cliente_habitual ? '🔄 CLIENTE HABITUAL / REINCIDENTE' : '✨ CLIENTE NUEVO'}\n\n` +
                               `*(Realizá la transferencia desde Mercado Pago y confirmá la acreditación)*`
                     });
                 }
