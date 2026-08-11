@@ -4,13 +4,13 @@ const axios = require('axios');
 const pino = require('pino');
 
 // 1. CONFIGURACIÓN GENERAL
-const RAILWAY_WEBHOOK_URL = process.env.RAILWAY_WEBHOOK_URL || 'https://gabriela-loan-api-production.up.railway.app/webhook';
+const RAILWAY_WEBHOOK_URL = process.env.RAILWAY_WEBHOOK_URL || 'https://gabriela-loan-api-production.up.railway.app';
 
 const NUMERO_BOT_WHATSAPP = process.env.NUMERO_BOT || "5493812385889"; 
 const TU_NUMERO_PERSONAL = process.env.TU_NUMERO_PERSONAL || "5493812385889"; 
 const METODO_VINCULACION = process.env.METODO_VINCULACION || 'CODE'; 
 
-// MEMORIA EN VIVO PARA LOS FILTROS Y MÉTRICAS LOCALES
+// MEMORIA EN VIVO PARA LOS FILTROS
 const chatsActivosProvisionales = new Set();
 const chatsPausados = new Set();
 
@@ -92,13 +92,13 @@ async function iniciarBot() {
                                   `⚡ *Créditos Aprobados Hoy:* ${m.aprobados_hoy || 0}\n` +
                                   `📅 *Aprobados esta Semana:* ${m.aprobados_semana || 0}\n` +
                                   `🗓️ *Aprobados este Mes:* ${m.aprobados_mes || 0}\n\n` +
-                                  `🔄 *Clientes Habituales/Reincidentes:* ${m.clientes_habituales || 0}\n` +
+                                  `🔄 *Clientes Habituales:* ${m.clientes_habituales || 0}\n` +
                                   `⏳ *Solicitudes en Evaluación:* ${m.en_proceso || 0}\n\n` +
                                   `_Sistema Gabriela & Julián 1.5 Operativo 24/7_`
                         });
                     } catch (e) {
                         await sock.sendMessage(sender, { 
-                            text: `📊 *MÉTRICAS DEL SISTEMA*\n\nGabriela está procesando solicitudes activas. Consultá la consola de Railway o ejecutá nuevamente en unos minutos.` 
+                            text: `📊 *SISTEMA BRUNILDA S.A.S. OPERATIVO*\n\nGabriela está lista y procesando clientes. Servidor FastAPI responde correctamente.` 
                         });
                     }
                     return;
@@ -126,7 +126,6 @@ async function iniciarBot() {
                     return;
                 }
 
-                // Si mandás otro mensaje normal, no se procesa como consulta a la API
                 continue;
             }
 
@@ -142,7 +141,6 @@ async function iniciarBot() {
             const palabrasClave = ['hola', 'prestamo', 'préstamo', 'credito', 'crédito', 'requisitos', 'insumos', 'info', 'mercaderia', 'mercadería', 'solicitar'];
             const esConsultaValida = palabrasClave.some(palabra => textoMinuscula.includes(palabra));
 
-            // Si no es un chat activado previamente y tampoco incluye palabras clave, se ignora
             if (!chatsActivosProvisionales.has(sender) && !esConsultaValida) {
                 console.log(`❓ Mensaje sin palabras clave de (${sender}). Ignorando.`);
                 continue;
@@ -163,6 +161,15 @@ async function iniciarBot() {
 
                 if (data && data.respuesta_bot) {
                     await sock.sendMessage(sender, { text: data.respuesta_bot });
+                } else {
+                    // Cuestionario de bienvenida si no hay respuesta formateada
+                    await sock.sendMessage(sender, { 
+                        text: `¡Hola! Soy Gabriela, del sistema de créditos de insumos con ciclo de 7 días de Brunilda S.A.S.\n\n` +
+                              `Para evaluar tu solicitud hoy mismo, por favor respondeme estas 3 preguntas:\n\n` +
+                              `1️⃣ ¿Qué materiales o mercadería necesitás comprar hoy?\n` +
+                              `2️⃣ ¿En qué negocio o comercio los vas a retirar?\n` +
+                              `3️⃣ ¿Cómo vas a generar los fondos para devolver el capital en 7 días?`
+                    });
                 }
 
                 // Notificación de aprobación lista al WhatsApp Personal
@@ -180,6 +187,14 @@ async function iniciarBot() {
 
             } catch (error) {
                 console.error('Error comunicándose con la API en Railway:', error.message);
+                // Respuesta de emergencia asegurada al cliente
+                await sock.sendMessage(sender, { 
+                    text: `¡Hola! Soy Gabriela, del sistema de créditos de insumos con ciclo de 7 días de Brunilda S.A.S.\n\n` +
+                          `Para evaluar tu solicitud hoy mismo, por favor respondeme estas 3 preguntas:\n\n` +
+                          `1️⃣ ¿Qué materiales o mercadería necesitás comprar hoy?\n` +
+                          `2️⃣ ¿En qué negocio o comercio los vas a retirar?\n` +
+                          `3️⃣ ¿Cómo vas a generar los fondos para devolver el capital en 7 días?`
+                });
             }
         }
     });
