@@ -5,7 +5,7 @@ const pino = require('pino');
 const http = require('http');
 
 // 1. CONFIGURACIÓN GENERAL Y ENDPOINTS DE LA LÍNEA C
-const RAILWAY_WEBHOOK_URL = process.env.RAILWAY_WEBHOOK_URL || 'https://gabriela-loan-api-production.up.railway.app';
+const RAILWAY_WEBHOOK_URL = process.env.RAILWAY_WEBHOOK_URL || 'https://gabriela-loan-api-production.up.railway.app/webhook';
 const NUMERO_BOT_WHATSAPP = process.env.NUMERO_BOT || "5493812385889"; 
 const TU_NUMERO_PERSONAL = process.env.TU_NUMERO_PERSONAL || "5493812385889"; 
 const METODO_VINCULACION = process.env.METODO_VINCULACION || 'CODE'; 
@@ -86,6 +86,22 @@ async function iniciarBot() {
             if (!textMessage) continue;
             const textoMinuscula = textMessage.toLowerCase();
 
+            // ------------------------------------------------------------------
+            // 🌐 FILTRO SOBERANO DE JURISDICCIÓN (SÓLO ARGENTINA +54)
+            // ------------------------------------------------------------------
+            const esNumeroArgentino = sender.startsWith('54');
+
+            if (!esNumeroArgentino && !esGrupo && !fromMe) {
+                console.log(`🌐 Consulta internacional detectada desde: ${sender}`);
+                
+                await sock.sendMessage(sender, {
+                    text: `🏛️ *BRUNILDA S.A.S. - B2B & TECH EXPORT*\n\n` +
+                          `Estimado/a. El sistema de microcréditos de insumos con liquidación directa a comercios opera actualmente de forma exclusiva en la *República Argentina*.\n\n` +
+                          `💼 *Para licencias de software, integración de la API de Evaluación Agéntica o alianzas internacionales:* Escriba a la dirección oficial de la empresa o aguarde la apertura de mercados regionales en nuestra próxima fase de expansión.`
+                });
+                return; // Frena el flujo y no envía el payload a Python
+            }
+
             // ⛔ FILTRO DE LA ESFINGE: SI INCUMPLIÓ, EL BOT LO IGNORA
             if (clientesBloqueadosPorIncumplimiento.has(sender)) {
                 console.log(`[ESFINGE]: Cliente bloqueado por mora/incumplimiento (${sender}). Ignorando.`);
@@ -98,7 +114,7 @@ async function iniciarBot() {
             if (fromMe) {
                 if (textoMinuscula === '!metricas' || textoMinuscula === '!stats') {
                     try {
-                        const res = await axios.get(`${RAILWAY_WEBHOOK_URL}/metricas`);
+                        const res = await axios.get(`${RAILWAY_WEBHOOK_URL.replace('/webhook', '')}/metricas`);
                         const m = res.data;
                         await sock.sendMessage(sender, {
                             text: `📊 *REPORTE DE GESTIÓN CREDITICIA - BRUNILDA S.A.S.*\n\n` +
