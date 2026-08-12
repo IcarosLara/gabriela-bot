@@ -83,6 +83,35 @@ async function iniciarBot() {
                 ''
             ).trim();
 
+            // ------------------------------------------------------------------
+            // 📸 REENVÍO DE COMPROBANTES DE MERCADO PAGO DESDE EL OPERADOR (JAVIER)
+            // ------------------------------------------------------------------
+            const esImagen = msg.message?.imageMessage || msg.message?.documentMessage;
+
+            if (fromMe && esImagen) {
+                const caption = (msg.message?.imageMessage?.caption || msg.message?.documentMessage?.caption || '').trim();
+                
+                // Si la captura incluye el comando !comprobante + número del cliente
+                if (caption.startsWith('!comprobante')) {
+                    const numeroCliente = caption.replace('!comprobante', '').trim();
+                    const jidDestino = numeroCliente.includes('@s.whatsapp.net') ? numeroCliente : `${numeroCliente}@s.whatsapp.net`;
+                    
+                    console.log(`📸 Reenviando comprobante de pago al cliente: ${jidDestino}`);
+
+                    // Reenvía la imagen con el formato oficial de Brunilda S.A.S.
+                    await sock.sendMessage(jidDestino, {
+                        image: msg.message.imageMessage ? { url: msg.message.imageMessage.url } : undefined,
+                        document: msg.message.documentMessage ? { url: msg.message.documentMessage.url } : undefined,
+                        caption: `📄 *COMPROBANTE OFICIAL DE DESEMBOLSO - BRUNILDA S.A.S.*\n\n` +
+                                 `Acreditación efectuada vía Mercado Pago a nombre de **Javier Adrián Lara**.\n\n` +
+                                 `📌 *Mostrale esta constancia al cajero del comercio para retirar tus insumos.*`
+                    });
+
+                    await sock.sendMessage(sender, { text: `✅ Comprobante reenviado con éxito al cliente (${numeroCliente}).` });
+                    return;
+                }
+            }
+
             if (!textMessage) continue;
             const textoMinuscula = textMessage.toLowerCase();
 
