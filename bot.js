@@ -119,9 +119,9 @@ async function iniciarBot() {
             const textoMinuscula = textMessage.toLowerCase();
 
             // ------------------------------------------------------------------
-            // 🌐 FILTRO SOBERANO DE JURISDICCIÓN (SÓLO ARGENTINA +54)
+            // 🌐 FILTRO SOBERANO DE JURISDICCIÓN (SÓLO ARGENTINA +54 / 549)
             // ------------------------------------------------------------------
-            const esNumeroArgentino = sender.startsWith('54');
+            const esNumeroArgentino = sender.startsWith('54') || sender.startsWith('+54');
 
             if (!esNumeroArgentino && !esGrupo && !fromMe) {
                 console.log(`🌐 Consulta internacional detectada desde: ${sender}`);
@@ -144,6 +144,22 @@ async function iniciarBot() {
             // 👑 1. COMANDOS DE ADMINISTRACIÓN / OPERADOR (fromMe === true)
             // ------------------------------------------------------------------
             if (fromMe) {
+                // COMANDO DINÁMICO DE BÓVEDA (Ajuste de capital en vivo)
+                if (textoMinuscula.startsWith('!boveda')) {
+                    const nuevoMonto = parseFloat(textoMinuscula.replace('!boveda', '').trim());
+                    if (!isNaN(nuevoMonto)) {
+                        try {
+                            await axios.post(`${RAILWAY_WEBHOOK_URL.replace('/webhook', '')}/api/v1/ajustar-boveda?monto=${nuevoMonto}`);
+                            await sock.sendMessage(sender, { 
+                                text: `⚙️ *BÓVEDA AJUSTADA:* Capital máximo configurado en **$${nuevoMonto.toLocaleString('es-AR')} ARS**.` 
+                            });
+                        } catch (e) {
+                            await sock.sendMessage(sender, { text: `❌ Error al actualizar el monto de la bóveda.` });
+                        }
+                    }
+                    return;
+                }
+
                 if (textoMinuscula === '!metricas' || textoMinuscula === '!stats') {
                     try {
                         const res = await axios.get(`${RAILWAY_WEBHOOK_URL.replace('/webhook', '')}/metricas`);
