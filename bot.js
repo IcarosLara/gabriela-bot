@@ -16,7 +16,7 @@ const chatsPausados = new Set();
 const chatsEnEvaluacion = new Set(); // Guarda los clientes que ya iniciaron para NO mandarles la bienvenida en loop
 
 async function iniciarBot() {
-    // CAMBIO A AUTH_INFO_V2 PARA FORZAR SESIÓN LIMPIA SIN ARCHIVOS CORRUPTOS
+    // SESIÓN LIMPIA EN AUTH_INFO_V2
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_v2');
 
     const sock = makeWASocket({
@@ -161,9 +161,10 @@ async function iniciarBot() {
                     if (!chatsEnEvaluacion.has(sender)) {
                         // FASE 1: PRIMER CONTACTO
                         await sock.sendMessage(sender, { 
-                            text: `¡Hola! Soy Gabriela, del sistema de créditos de insumos con ciclo de 7 días de Brunilda S.A.S.\n\n` +
-                                  `Para evaluar tu solicitud hoy mismo, por favor respondeme estas 3 preguntas:\n\n` +
-                                  `1️⃣ ¿Qué materiales o mercadería necesitás comprar hoy?\n` +
+                            text: `¡Hola! Soy Gabriela, del sistema de microcréditos de insumos con ciclo de 7 días de Brunilda S.A.S.\n\n` +
+                                  `📌 *Nota importante:* Arrancamos con las operaciones y desembolsos a partir de este **VIERNES**.\n\n` +
+                                  `Para evaluar y agendar tu solicitud con anticipación hoy mismo, por favor respondeme estas 3 preguntas:\n\n` +
+                                  `1️⃣ ¿Qué materiales o mercadería necesitás comprar?\n` +
                                   `2️⃣ ¿En qué negocio o comercio los vas a retirar?\n` +
                                   `3️⃣ ¿Cómo vas a generar los fondos para devolver el capital en 7 días?`
                         });
@@ -171,9 +172,9 @@ async function iniciarBot() {
                     } else {
                         // FASE 2: VERIFICACIÓN Y DOCUMENTACIÓN
                         await sock.sendMessage(sender, { 
-                            text: `¡Perfecto! Para avanzar al contrato de mutuo con el equipo legal de Brunilda S.A.S.:\n\n` +
+                            text: `¡Perfecto! Para avanzar con el agendamiento y el contrato de mutuo para el viernes con el equipo de Brunilda S.A.S.:\n\n` +
                                   `📷 Por favor enviame una foto del DNI (frente y dorso) y una foto tuya de rostro.\n\n` +
-                                  `🏪 Una vez en el comercio, sacale una foto de frente al local para confirmar que estás ahí y pasame el Alias de Mercado Pago del negocio para realizar el pago directo.`
+                                  `🏪 Recordá que el día viernes, una vez en el comercio, le sacás foto de frente al local y nos pasás el Alias de Mercado Pago del negocio para realizar el pago directo.`
                         });
                     }
                 }
@@ -196,18 +197,19 @@ async function iniciarBot() {
                 // Fallback seguro anti-loop si falla el servidor
                 if (!chatsEnEvaluacion.has(sender)) {
                     await sock.sendMessage(sender, { 
-                        text: `¡Hola! Soy Gabriela, del sistema de créditos de insumos con ciclo de 7 días de Brunilda S.A.S.\n\n` +
-                              `Para evaluar tu solicitud hoy mismo, por favor respondeme estas 3 preguntas:\n\n` +
-                              `1️⃣ ¿Qué materiales o mercadería necesitás comprar hoy?\n` +
+                        text: `¡Hola! Soy Gabriela, del sistema de microcréditos de insumos con ciclo de 7 días de Brunilda S.A.S.\n\n` +
+                              `📌 *Nota importante:* Arrancamos con las operaciones y desembolsos a partir de este **VIERNES**.\n\n` +
+                              `Para evaluar y agendar tu solicitud con anticipación hoy mismo, por favor respondeme estas 3 preguntas:\n\n` +
+                              `1️⃣ ¿Qué materiales o mercadería necesitás comprar?\n` +
                               `2️⃣ ¿En qué negocio o comercio los vas a retirar?\n` +
                               `3️⃣ ¿Cómo vas a generar los fondos para devolver el capital en 7 días?`
                     });
                     chatsEnEvaluacion.add(sender);
                 } else {
                     await sock.sendMessage(sender, { 
-                        text: `¡Perfecto! Para avanzar con el contrato de mutuo:\n\n` +
+                        text: `¡Perfecto! Para avanzar con el agendamiento para el viernes:\n\n` +
                               `📷 Pasame foto de tu DNI (frente y dorso) y una foto de tu rostro.\n\n` +
-                              `🏪 Cuando estés en la distribuidora, mandame una foto del local y el Alias/CVU del negocio para transferir los insumos.`
+                              `🏪 El viernes, cuando estés en la distribuidora, nos mandás la foto del local y el Alias/CVU del negocio para transferir los insumos.`
                     });
                 }
             }
@@ -216,3 +218,14 @@ async function iniciarBot() {
 }
 
 iniciarBot();
+
+// Servidor de salud HTTP para mantener vivo el contenedor en Railway (Healthcheck)
+const http = require('http');
+const PORT = process.env.PORT || 3000;
+
+http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Gabriela WhatsApp Bridge Operativo');
+}).listen(PORT, () => {
+    console.log(`🌐 Servidor de salud escuchando en el puerto ${PORT}`);
+});
