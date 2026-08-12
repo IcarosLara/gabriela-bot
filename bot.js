@@ -16,7 +16,8 @@ const chatsPausados = new Set();
 const chatsEnEvaluacion = new Set(); // Guarda los clientes que ya iniciaron para NO mandarles la bienvenida en loop
 
 async function iniciarBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    // CAMBIO A AUTH_INFO_V2 PARA FORZAR SESIÓN LIMPIA SIN ARCHIVOS CORRUPTOS
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_v2');
 
     const sock = makeWASocket({
         logger: pino({ level: 'silent' }),
