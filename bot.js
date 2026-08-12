@@ -2,21 +2,26 @@ const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whis
 const qrcode = require('qrcode-terminal');
 const axios = require('axios');
 const pino = require('pino');
+const http = require('http');
 
-// 1. CONFIGURACIÓN GENERAL
+// 1. CONFIGURACIÓN GENERAL Y ENDPOINTS DE LA LÍNEA C
 const RAILWAY_WEBHOOK_URL = process.env.RAILWAY_WEBHOOK_URL || 'https://gabriela-loan-api-production.up.railway.app';
-
 const NUMERO_BOT_WHATSAPP = process.env.NUMERO_BOT || "5493812385889"; 
 const TU_NUMERO_PERSONAL = process.env.TU_NUMERO_PERSONAL || "5493812385889"; 
 const METODO_VINCULACION = process.env.METODO_VINCULACION || 'CODE'; 
 
-// MEMORIA EN VIVO PARA CONTROLAR ESTADOS Y EVITAR LOOPS
+// MEMORIA DE ESTADO Y FILTRO DE LA ESFINGE
 const chatsActivosProvisionales = new Set();
 const chatsPausados = new Set();
-const chatsEnEvaluacion = new Set(); // Guarda los clientes que ya iniciaron para NO mandarles la bienvenida en loop
+const chatsEnEvaluacion = new Set();
+const clientesBloqueadosPorIncumplimiento = new Set(); // Cero tolerancia: ignora olímpicamente
+
+// CONTROL DE CUPOS Y ASIGNACIÓN DE CAPITAL
+let cuposReservados10k = 0;
+const MAX_CUPOS_10K = 2;
 
 async function iniciarBot() {
-    // SESIÓN LIMPIA EN AUTH_INFO_V2
+    // SESIÓN LIMPIA EN AUTH_INFO_V2 (Mantenimiento de sesión estable)
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_v2');
 
     const sock = makeWASocket({
@@ -28,7 +33,7 @@ async function iniciarBot() {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // 2. CONTROL DE CONEXIÓN
+    // 2. CONTROL DE CONEXIÓN DE RED
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
@@ -39,12 +44,12 @@ async function iniciarBot() {
 
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut);
-            console.log('Conexión cerrada. Reconectando...', shouldReconnect);
+            console.log('[RED]: Conexión cerrada. Reconectando...', shouldReconnect);
             if (shouldReconnect) {
                 setTimeout(() => iniciarBot(), 3000);
             }
         } else if (connection === 'open') {
-            console.log('\n🚀 ¡Gabriela 1.5 está conectada 24/7 y vinculada a la API de Railway!\n');
+            console.log('\n🚀 ¡Gabriela 1.5 está conectada 24/7 a la API de Brunilda S.A.S. en Railway!\n');
         }
     });
 
@@ -57,12 +62,12 @@ async function iniciarBot() {
                 console.log(`📱 CÓDIGO DE VINCULACIÓN DE WHATSAPP: ${code}`);
                 console.log('======================================================\n');
             } catch (err) {
-                console.error('Error al solicitar el código de vinculación:', err.message);
+                console.error('[ERROR PAIRING]:', err.message);
             }
         }, 4000);
     }
 
-    // 3. PROCESAMIENTO DE MENSAJES
+    // 3. PROCESAMIENTO DE MENSAJES Y FILTROS
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
 
@@ -70,6 +75,7 @@ async function iniciarBot() {
             if (!msg.message) continue;
 
             const sender = msg.key.remoteJid;
+            const esGrupo = sender.endsWith('@g.us');
             const fromMe = msg.key.fromMe;
             const textMessage = (
                 msg.message?.conversation || 
@@ -80,8 +86,14 @@ async function iniciarBot() {
             if (!textMessage) continue;
             const textoMinuscula = textMessage.toLowerCase();
 
+            // ⛔ FILTRO DE LA ESFINGE: SI INCUMPLIÓ, EL BOT LO IGNORA
+            if (clientesBloqueadosPorIncumplimiento.has(sender)) {
+                console.log(`[ESFINGE]: Cliente bloqueado por mora/incumplimiento (${sender}). Ignorando.`);
+                continue;
+            }
+
             // ------------------------------------------------------------------
-            // 👑 1. COMANDOS DEL PROPIETARIO (fromMe === true)
+            // 👑 1. COMANDOS DE ADMINISTRACIÓN / OPERADOR (fromMe === true)
             // ------------------------------------------------------------------
             if (fromMe) {
                 if (textoMinuscula === '!metricas' || textoMinuscula === '!stats') {
@@ -90,17 +102,28 @@ async function iniciarBot() {
                         const m = res.data;
                         await sock.sendMessage(sender, {
                             text: `📊 *REPORTE DE GESTIÓN CREDITICIA - BRUNILDA S.A.S.*\n\n` +
+                                  `⚡ *Cupos $10.000 Asignados:* ${cuposReservados10k}/${MAX_CUPOS_10K}\n` +
                                   `⚡ *Créditos Aprobados Hoy:* ${m.aprobados_hoy || 0}\n` +
                                   `📅 *Aprobados esta Semana:* ${m.aprobados_semana || 0}\n` +
                                   `🗓️ *Aprobados este Mes:* ${m.aprobados_mes || 0}\n\n` +
                                   `🔄 *Clientes Habituales:* ${m.clientes_habituales || 0}\n` +
                                   `⏳ *Solicitudes en Evaluación:* ${m.en_proceso || 0}\n\n` +
-                                  `_Sistema Gabriela & Julián 1.5 Operativo 24/7_`
+                                  `_Brunilda S.A.S. - Motor 1.5 Operativo_`
                         });
                     } catch (e) {
                         await sock.sendMessage(sender, { 
-                            text: `📊 *SISTEMA BRUNILDA S.A.S. OPERATIVO*\n\nGabriela lista en producción.` 
+                            text: `📊 *BRUNILDA S.A.S. OPERATIVO*\n\nCupos $10.000 Asignados: ${cuposReservados10k}/${MAX_CUPOS_10K}. Engine sin anomalías.` 
                         });
+                    }
+                    return;
+                }
+
+                if (textoMinuscula.startsWith('!bloquear')) {
+                    const numeroABloquear = textoMinuscula.replace('!bloquear', '').trim();
+                    if (numeroABloquear) {
+                        const jidBloquear = `${numeroABloquear}@s.whatsapp.net`;
+                        clientesBloqueadosPorIncumplimiento.add(jidBloquear);
+                        await sock.sendMessage(sender, { text: `⛔ Cliente ${numeroABloquear} aislado del sistema.` });
                     }
                     return;
                 }
@@ -109,7 +132,7 @@ async function iniciarBot() {
                     chatsActivosProvisionales.add(sender);
                     chatsPausados.delete(sender);
                     await sock.sendMessage(sender, { 
-                        text: '🤖 *Gabriela:* ¡Hola! Soy la asistente virtual de Brunilda S.A.S. ¿En qué te puedo ayudar con tu microcrédito?' 
+                        text: '🤖 *Gabriela:* Asistente activada. Procesando evaluación de microcrédito.' 
                     });
                     return;
                 }
@@ -118,7 +141,7 @@ async function iniciarBot() {
                     chatsPausados.add(sender);
                     chatsActivosProvisionales.delete(sender);
                     await sock.sendMessage(sender, { 
-                        text: '🛑 *Gabriela ha sido pausada en esta conversación.*' 
+                        text: '🛑 *Gabriela pausada en este canal.*' 
                     });
                     return;
                 }
@@ -127,25 +150,38 @@ async function iniciarBot() {
             }
 
             // ------------------------------------------------------------------
-            // 👥 2. FILTROS PARA CLIENTES
+            // 📢 2. DIFUSIÓN EN GRUPOS DE EMPRENDEDORES
+            // ------------------------------------------------------------------
+            if (esGrupo) {
+                const palabrasClaveGrupo = ['prestamo', 'préstamo', 'credito', 'crédito', 'insumos', 'mercaderia', 'mercadería', 'financiación'];
+                if (palabrasClaveGrupo.some(p => textoMinuscula.includes(p))) {
+                    await sock.sendMessage(sender, {
+                        text: `📢 *FINANCIAMIENTO DE INSUMOS - BRUNILDA S.A.S.*\n\n` +
+                              `🚀 ¡A partir de este **VIERNES** habilitamos créditos directos para compras de mercadería en comercios adheridos (cupos limitados)!\n\n` +
+                              `👉 Para evaluar tu solicitud y reservar tu cupo hoy, *escribime por privado* marcando este mensaje o abriendo un chat individual.`
+                    });
+                }
+                continue;
+            }
+
+            // ------------------------------------------------------------------
+            // 👥 3. EVALUACIÓN Y CAPTACIÓN INDIVIDUAL
             // ------------------------------------------------------------------
             if (chatsPausados.has(sender)) continue;
 
             const palabrasClave = ['hola', 'prestamo', 'préstamo', 'credito', 'crédito', 'requisitos', 'insumos', 'info', 'mercaderia', 'mercadería', 'solicitar'];
             const esConsultaValida = palabrasClave.some(palabra => textoMinuscula.includes(palabra));
 
-            // Si es un chat nuevo sin palabras clave, ignora
             if (!chatsEnEvaluacion.has(sender) && !chatsActivosProvisionales.has(sender) && !esConsultaValida) {
                 continue;
             }
 
             // ------------------------------------------------------------------
-            // 🤖 3. LÓGICA ANTI-LOOP DE CONVERSACIÓN
+            // 🤖 4. FLUJO DE EVALUACIÓN DIRECTA SIN REVELAR FUTURO
             // ------------------------------------------------------------------
-            console.log(`💬 Mensaje recibido de ${sender}: "${textMessage}"`);
+            console.log(`💬 Processing payload from ${sender}: "${textMessage}"`);
 
             try {
-                // Enviamos el mensaje a la API de FastAPI
                 const response = await axios.post(RAILWAY_WEBHOOK_URL, {
                     sender: sender,
                     message: textMessage
@@ -155,61 +191,91 @@ async function iniciarBot() {
 
                 if (data && data.respuesta_bot) {
                     await sock.sendMessage(sender, { text: data.respuesta_bot });
-                    chatsEnEvaluacion.add(sender); // Marcamos que este cliente ya inició la charla
+                    chatsEnEvaluacion.add(sender);
                 } else {
-                    // Si la API responde vacío, manejamos las fases internamente según el historial
                     if (!chatsEnEvaluacion.has(sender)) {
-                        // FASE 1: PRIMER CONTACTO
+                        let montoOfrecido = "$5.000";
+                        if (cuposReservados10k < MAX_CUPOS_10K) {
+                            montoOfrecido = "$5.000 a $10.000";
+                        }
+
+                        // FASE 1: PRIMER CONTACTO - CRUDA Y DIRECTA
                         await sock.sendMessage(sender, { 
-                            text: `¡Hola! Soy Gabriela, del sistema de microcréditos de insumos con ciclo de 7 días de Brunilda S.A.S.\n\n` +
-                                  `📌 *Nota importante:* Arrancamos con las operaciones y desembolsos a partir de este **VIERNES**.\n\n` +
-                                  `Para evaluar y agendar tu solicitud con anticipación hoy mismo, por favor respondeme estas 3 preguntas:\n\n` +
+                            text: `¡Hola! Soy Gabriela, del sistema de microcréditos de insumos de Brunilda S.A.S.\n\n` +
+                                  `📌 *Condiciones Operativas:*\n` +
+                                  `• *Plazo de Devolución:* Exactamente **168 horas** (7 días corridos).\n` +
+                                  `• *Tasa Promocional:* **2% de interés** sobre el capital otorgado.\n` +
+                                  `• *Desembolsos:* A partir de este **VIERNES** con cupos limitados (líneas de ${montoOfrecido}).\n\n` +
+                                  `Para evaluar y agendar tu solicitud con anticipación hoy mismo, respondeme estas 3 preguntas:\n\n` +
                                   `1️⃣ ¿Qué materiales o mercadería necesitás comprar?\n` +
                                   `2️⃣ ¿En qué negocio o comercio los vas a retirar?\n` +
-                                  `3️⃣ ¿Cómo vas a generar los fondos para devolver el capital en 7 días?`
+                                  `3️⃣ ¿Cómo vas a generar los fondos para devolver el capital en 168 hs?`
                         });
                         chatsEnEvaluacion.add(sender);
                     } else {
-                        // FASE 2: VERIFICACIÓN Y DOCUMENTACIÓN
+                        // FASE 2: VERIFICACIÓN Y FIRMA DIGITAL DE MUTUO + PAGARÉ
                         await sock.sendMessage(sender, { 
-                            text: `¡Perfecto! Para avanzar con el agendamiento y el contrato de mutuo para el viernes con el equipo de Brunilda S.A.S.:\n\n` +
-                                  `📷 Por favor enviame una foto del DNI (frente y dorso) y una foto tuya de rostro.\n\n` +
-                                  `🏪 Recordá que el día viernes, una vez en el comercio, le sacás foto de frente al local y nos pasás el Alias de Mercado Pago del negocio para realizar el pago directo.`
+                            text: `¡Perfecto! Para avanzar con el agendamiento y la firma del **Contrato de Mutuo Digital + Pagaré Electrónico** con Brunilda S.A.S.:\n\n` +
+                                  `📷 1. Enviame foto de tu DNI (frente y dorso) y una selfie de tu rostro.\n` +
+                                  `✍️ 2. Tu confirmación en este chat constituye aceptación contractual digital.\n\n` +
+                                  `🏪 *El día viernes:* Una vez en el comercio, le sacás foto al local de frente y nos pasás el Alias/CVU de Mercado Pago del negocio. Le transferimos directamente al comercio y retirás tus insumos al instante.`
                         });
+                        
+                        if (cuposReservados10k < MAX_CUPOS_10K) {
+                            cuposReservados10k++;
+                        }
                     }
                 }
 
-                // Alerta automática al propietario al llegar al estado final
+                // ------------------------------------------------------------------
+                // 🚨 5. ALERTA AL OPERADOR Y MENSAJE AUTOMÁTICO DE LIQUIDACIÓN
+                // ------------------------------------------------------------------
                 if (data && data.estado_siguiente === 5) {
+                    const montoSolicitado = data.monto_aprobado || (cuposReservados10k <= MAX_CUPOS_10K ? 10000 : 5000);
+                    const tasaInteres = 0.02;
+                    const totalDevolucion = montoSolicitado * (1 + tasaInteres);
+
+                    // A) Notificación al cliente con resumen formal de la deuda
+                    await sock.sendMessage(sender, {
+                        text: `🎉 *¡Tu crédito de insumos ha sido otorgado!*\n\n` +
+                              `📋 *Resumen de la operación:*\n` +
+                              `• *Monto aprobado:* $${montoSolicitado.toLocaleString('es-AR')}\n` +
+                              `• *Tasa aplicada:* 2%\n` +
+                              `• *Total a devolver:* $${totalDevolucion.toLocaleString('es-AR')}\n` +
+                              `• *Plazo límite de pago:* Exactamente **168 horas** contadas a partir de la transferencia.`
+                    });
+
+                    // B) Notificación de ejecución para el Propietario/Operador
                     const jidPersonal = `${TU_NUMERO_PERSONAL}@s.whatsapp.net`;
                     await sock.sendMessage(jidPersonal, {
                         text: `🚨 *SOLICITUD LISTA PARA DESEMBOLSO*\n\n` +
                               `👤 *Cliente:* ${sender.replace('@s.whatsapp.net', '')}\n` +
-                              `📄 *Contrato:* Auditado por Julián 1.5\n` +
-                              `🛒 *Insumos:* Validado por Gabriela\n\n` +
-                              `*(Realizá la transferencia desde Mercado Pago y confirmá la acreditación)*`
+                              `📄 *Contrato:* Mutuo + Pagaré Digital Auditado por Julián 1.5\n` +
+                              `🛒 *Insumos:* Validado por Gabriela\n` +
+                              `💵 *Monto:* $${montoSolicitado.toLocaleString('es-AR')} (Devuelve $${totalDevolucion.toLocaleString('es-AR')})\n\n` +
+                              `*(Efectuar transferencia directa al Alias del negocio tras verificación)*`
                     });
                 }
 
             } catch (error) {
-                console.error('Error conectando a la API:', error.message);
+                console.error('[API ERROR]:', error.message);
                 
-                // Fallback seguro anti-loop si falla el servidor
                 if (!chatsEnEvaluacion.has(sender)) {
                     await sock.sendMessage(sender, { 
-                        text: `¡Hola! Soy Gabriela, del sistema de microcréditos de insumos con ciclo de 7 días de Brunilda S.A.S.\n\n` +
-                              `📌 *Nota importante:* Arrancamos con las operaciones y desembolsos a partir de este **VIERNES**.\n\n` +
-                              `Para evaluar y agendar tu solicitud con anticipación hoy mismo, por favor respondeme estas 3 preguntas:\n\n` +
+                        text: `¡Hola! Soy Gabriela, del sistema de microcréditos de insumos de Brunilda S.A.S.\n\n` +
+                              `📌 *Condiciones:* Devolución a las **168 hs** con **2% de interés**.\n` +
+                              `📌 *Operativa:* Desembolsos este **VIERNES** (Cupos limitados).\n\n` +
+                              `Respondeme estas 3 preguntas para evaluar tu cupo hoy:\n\n` +
                               `1️⃣ ¿Qué materiales o mercadería necesitás comprar?\n` +
                               `2️⃣ ¿En qué negocio o comercio los vas a retirar?\n` +
-                              `3️⃣ ¿Cómo vas a generar los fondos para devolver el capital en 7 días?`
+                              `3️⃣ ¿Cómo vas a generar los fondos para devolver el capital en 168 hs?`
                     });
                     chatsEnEvaluacion.add(sender);
                 } else {
                     await sock.sendMessage(sender, { 
-                        text: `¡Perfecto! Para avanzar con el agendamiento para el viernes:\n\n` +
-                              `📷 Pasame foto de tu DNI (frente y dorso) y una foto de tu rostro.\n\n` +
-                              `🏪 El viernes, cuando estés en la distribuidora, nos mandás la foto del local y el Alias/CVU del negocio para transferir los insumos.`
+                        text: `¡Perfecto! Para agendar tu solicitud para el viernes:\n\n` +
+                              `📷 Pasame foto de tu DNI (frente y dorso) + selfie de tu rostro.\n\n` +
+                              `🏪 El viernes, cuando estés en la distribuidora, enviás la foto del local y el Alias del comercio para realizar el pago directo.`
                     });
                 }
             }
@@ -219,13 +285,11 @@ async function iniciarBot() {
 
 iniciarBot();
 
-// Servidor de salud HTTP para mantener vivo el contenedor en Railway (Healthcheck)
-const http = require('http');
+// SERVER HEALTHCHECK PARA RAILWAY (Evita SIGTERM por ausencia de socket HTTP)
 const PORT = process.env.PORT || 3000;
-
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Gabriela WhatsApp Bridge Operativo');
+    res.end('Gabriela WhatsApp Bridge Operativo - Brunilda S.A.S.');
 }).listen(PORT, () => {
-    console.log(`🌐 Servidor de salud escuchando en el puerto ${PORT}`);
+    console.log(`🌐 Healthcheck activo en el puerto ${PORT}`);
 });
