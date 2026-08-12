@@ -265,7 +265,7 @@ async function iniciarBot() {
                         await sock.sendMessage(sender, { 
                             text: `¡Perfecto! Para avanzar con el agendamiento y la firma del **Contrato de Mutuo Digital + Pagaré Electrónico** con Brunilda S.A.S.:\n\n` +
                                   `📷 1. Enviame foto de tu DNI (frente y dorso) y una selfie de tu rostro.\n` +
-                                  `✍️ 2. Tu confirmación en este chat constituye aceptación contractual digital.\n\n` +
+                                  `✍️ 2. Tu confirmación en este chat constituye acceptance contractual digital.\n\n` +
                                   `🏪 *El día viernes:* Una vez en el comercio, le sacás foto al local de frente y nos pasás el Alias/CVU de Mercado Pago del negocio. Le transferimos directamente al comercio y retirás tus insumos al instante.`
                         });
                         
@@ -288,7 +288,7 @@ async function iniciarBot() {
                         text: `🎉 *¡Tu crédito de insumos ha sido otorgado!*\n\n` +
                               `📋 *Resumen de la operación:*\n` +
                               `• *Monto aprobado:* $${montoSolicitado.toLocaleString('es-AR')}\n` +
-                              `• *Tasa applied:* 2%\n` +
+                              `• *Tasa aplicada:* 2%\n` +
                               `• *Total a devolver:* $${totalDevolucion.toLocaleString('es-AR')}\n` +
                               `• *Plazo límite de pago:* Exactamente **168 horas** contadas a partir de la transferencia.`
                     });
@@ -332,10 +332,10 @@ async function iniciarBot() {
 }
 
 // ==============================================================================
-// 📢 MOTOR DE DIFUSIÓN ROTATIVO ANTI-SPAM PARA GRUPOS DE EMPRENDEDORES
+// 📢 MOTOR DE DIFUSIÓN ROTATIVO ANTI-SPAM (SOLO 3 GRUPOS AUTORIZADOS)
 // ==============================================================================
 
-// Plantillas con variaciones de copywriting para evitar detección de spam
+// Plantillas con variaciones de copywriting
 const PLANTILLAS_DIFUSION = [
     `📢 *FINANCIAMIENTO DE INSUMOS - BRUNILDA S.A.S.*\n\n` +
     `🚀 ¡A partir de este **VIERNES** habilitamos créditos directos para compras de mercadería en comercios adheridos!\n\n` +
@@ -352,22 +352,18 @@ const PLANTILLAS_DIFUSION = [
     `Lanzamos líneas de financiamiento rápido a 7 días para feriantes, comercios y gastronómicos.\n\n` +
     `• Sin entrega de efectivo: pagamos en el local donde compras.\n` +
     `• Tasa promocional del 2% a 168 hs.\n\n` +
-    `📩 Consultá requisitos por privado para agendar tu cupo del viernes.`,
-
-    `🔥 *Brunilda S.A.S. - Impulso para Comercio Local*\n\n` +
-    `Financiamos desde $5.000 hasta $10.000 para que no te quedes sin stock el fin de semana.\n\n` +
-    `⚡ Evaluación agéntica en 2 minutos.\n` +
-    `⚡ Desembolsos directos este **VIERNES**.\n\n` +
-    `👉 Escribinos al privado para agendar tu solicitud con anticipación.`
+    `📩 Consultá requisitos por privado para agendar tu cupo del viernes.`
 ];
 
-// Lista de IDs de grupos donde el bot tiene permiso de difusión
-const GRUPOS_OBJETIVO = [
-    // Se completan automáticamente o podés hardcodear los JIDs de los grupos (ej: '120363000000000000@g.us')
+// NOMBRES EXACTOS DE LOS 3 ÚNICOS GRUPOS PERMITIDOS
+const NOMBRES_GRUPOS_AUTORIZADOS = [
+    "Impulso universitario",
+    "EMPRENDIMIENTOS",
+    "Activando las Ventas en Feria"
 ];
 
 function iniciarMotorDifusion(sock) {
-    console.log('📢 Motor de difusión rotativo activado (Horario 08:00 a 20:00 hs).');
+    console.log('📢 Motor de difusión rotativo activado (HORARIO: 08:00 a 20:00 hs | SOLO GRUPOS AUTORIZADOS).');
 
     // Intervalo base de 2.5 horas con variación aleatoria (+/- 30 mins)
     const INTERVALO_BASE_MS = 2.5 * 60 * 60 * 1000; 
@@ -378,20 +374,35 @@ function iniciarMotorDifusion(sock) {
         // Control de ventana operativa (08:00 a 20:00 hs)
         if (horaActual >= 8 && horaActual <= 20) {
             try {
-                // Obtener todos los chats de grupos si no hay lista fija
-                const chats = await sock.groupFetchAllParticipating();
-                const grupoIds = GRUPOS_OBJETIVO.length > 0 ? GRUPOS_OBJETIVO : Object.keys(chats);
+                // Obtener todos los grupos participantes
+                const todosLosGrupos = await sock.groupFetchAllParticipating();
+                
+                // FILTRADO ESTRICTO POR NOMBRE DE GRUPO
+                const gruposValidados = [];
+                for (const jid in todosLosGrupos) {
+                    const nombreGrupo = todosLosGrupos[jid].subject || "";
+                    const esAutorizado = NOMBRES_GRUPOS_AUTORIZADOS.some(nombreValido => 
+                        nombreGrupo.toLowerCase().includes(nombreValido.toLowerCase())
+                    );
+                    
+                    if (esAutorizado) {
+                        gruposValidados.push({ jid, nombre: nombreGrupo });
+                    }
+                }
 
-                if (grupoIds.length > 0) {
-                    // Seleccionar plantilla aleatoria
+                console.log(`🎯 Grupos autorizados detectados (${gruposValidados.length}):`, gruposValidados.map(g => g.nombre));
+
+                if (gruposValidados.length > 0) {
                     const plantilla = PLANTILLAS_DIFUSION[Math.floor(Math.random() * PLANTILLAS_DIFUSION.length)];
                     
-                    for (const grupoJid of grupoIds) {
-                        console.log(`📢 Enviando difusión rotativa al grupo: ${grupoJid}`);
-                        await sock.sendMessage(grupoJid, { text: plantilla });
-                        // Espera de 10 a 20 segundos entre grupo y grupo para no saturar el socket
+                    for (const grupo of gruposValidados) {
+                        console.log(`📢 Enviando difusión a grupo autorizado: "${grupo.nombre}" (${grupo.jid})`);
+                        await sock.sendMessage(grupo.jid, { text: plantilla });
+                        // Espera de 10 a 20 segundos entre envío y envío
                         await new Promise(r => setTimeout(r, Math.floor(Math.random() * 10000) + 10000));
                     }
+                } else {
+                    console.log('⚠️ No se encontraron grupos que coincidan con la lista autorizada.');
                 }
             } catch (err) {
                 console.error('[ERROR BROADCAST]:', err.message);
