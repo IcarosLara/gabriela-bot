@@ -50,6 +50,9 @@ async function iniciarBot() {
             }
         } else if (connection === 'open') {
             console.log('\n🚀 ¡Gabriela 1.5 está conectada 24/7 a la API de Brunilda S.A.S. en Railway!\n');
+            
+            // Iniciar motor de difusión rotativo
+            iniciarMotorDifusion(sock);
         }
     });
 
@@ -285,7 +288,7 @@ async function iniciarBot() {
                         text: `🎉 *¡Tu crédito de insumos ha sido otorgado!*\n\n` +
                               `📋 *Resumen de la operación:*\n` +
                               `• *Monto aprobado:* $${montoSolicitado.toLocaleString('es-AR')}\n` +
-                              `• *Tasa aplicada:* 2%\n` +
+                              `• *Tasa applied:* 2%\n` +
                               `• *Total a devolver:* $${totalDevolucion.toLocaleString('es-AR')}\n` +
                               `• *Plazo límite de pago:* Exactamente **168 horas** contadas a partir de la transferencia.`
                     });
@@ -326,6 +329,87 @@ async function iniciarBot() {
             }
         }
     });
+}
+
+// ==============================================================================
+// 📢 MOTOR DE DIFUSIÓN ROTATIVO ANTI-SPAM PARA GRUPOS DE EMPRENDEDORES
+// ==============================================================================
+
+// Plantillas con variaciones de copywriting para evitar detección de spam
+const PLANTILLAS_DIFUSION = [
+    `📢 *FINANCIAMIENTO DE INSUMOS - BRUNILDA S.A.S.*\n\n` +
+    `🚀 ¡A partir de este **VIERNES** habilitamos créditos directos para compras de mercadería en comercios adheridos!\n\n` +
+    `📌 *Líneas iniciales:* $5.000 a $10.000 ARS.\n` +
+    `📌 *Devolución:* 168 horas (2% de interés).\n\n` +
+    `👉 Para reservar tu cupo hoy, *escribime por privado* marcando este mensaje.`,
+
+    `💡 *¿Necesitás stock o insumos para tu emprendimiento esta semana?*\n\n` +
+    `En *Brunilda S.A.S.* financiamos la compra directa en tu distribuidora o comercio de confianza. Pagamos directo en la caja y retirás tus materiales.\n\n` +
+    `🗓️ *Desembolsos:* Este **VIERNES** (cupos limitados).\n` +
+    `📲 Mandame un mensaje al privado para evaluar tu solicitud hoy mismo.`,
+
+    `🏪 *CRÉDITOS DE MERCADERÍA Y HERRAMIENTAS - TUCUMÁN*\n\n` +
+    `Lanzamos líneas de financiamiento rápido a 7 días para feriantes, comercios y gastronómicos.\n\n` +
+    `• Sin entrega de efectivo: pagamos en el local donde compras.\n` +
+    `• Tasa promocional del 2% a 168 hs.\n\n` +
+    `📩 Consultá requisitos por privado para agendar tu cupo del viernes.`,
+
+    `🔥 *Brunilda S.A.S. - Impulso para Comercio Local*\n\n` +
+    `Financiamos desde $5.000 hasta $10.000 para que no te quedes sin stock el fin de semana.\n\n` +
+    `⚡ Evaluación agéntica en 2 minutos.\n` +
+    `⚡ Desembolsos directos este **VIERNES**.\n\n` +
+    `👉 Escribinos al privado para agendar tu solicitud con anticipación.`
+];
+
+// Lista de IDs de grupos donde el bot tiene permiso de difusión
+const GRUPOS_OBJETIVO = [
+    // Se completan automáticamente o podés hardcodear los JIDs de los grupos (ej: '120363000000000000@g.us')
+];
+
+function iniciarMotorDifusion(sock) {
+    console.log('📢 Motor de difusión rotativo activado (Horario 08:00 a 20:00 hs).');
+
+    // Intervalo base de 2.5 horas con variación aleatoria (+/- 30 mins)
+    const INTERVALO_BASE_MS = 2.5 * 60 * 60 * 1000; 
+
+    async function ejecutarBroadcast() {
+        const horaActual = new Date().getHours();
+
+        // Control de ventana operativa (08:00 a 20:00 hs)
+        if (horaActual >= 8 && horaActual <= 20) {
+            try {
+                // Obtener todos los chats de grupos si no hay lista fija
+                const chats = await sock.groupFetchAllParticipating();
+                const grupoIds = GRUPOS_OBJETIVO.length > 0 ? GRUPOS_OBJETIVO : Object.keys(chats);
+
+                if (grupoIds.length > 0) {
+                    // Seleccionar plantilla aleatoria
+                    const plantilla = PLANTILLAS_DIFUSION[Math.floor(Math.random() * PLANTILLAS_DIFUSION.length)];
+                    
+                    for (const grupoJid of grupoIds) {
+                        console.log(`📢 Enviando difusión rotativa al grupo: ${grupoJid}`);
+                        await sock.sendMessage(grupoJid, { text: plantilla });
+                        // Espera de 10 a 20 segundos entre grupo y grupo para no saturar el socket
+                        await new Promise(r => setTimeout(r, Math.floor(Math.random() * 10000) + 10000));
+                    }
+                }
+            } catch (err) {
+                console.error('[ERROR BROADCAST]:', err.message);
+            }
+        } else {
+            console.log('🌙 Fuera de horario comercial. Difusión pausada hasta mañana a las 08:00 hs.');
+        }
+
+        // Programar siguiente disparo con Jitter aleatorio
+        const jitter = (Math.random() * 30 - 15) * 60 * 1000; // +/- 15 minutos
+        const proximaEjecucion = INTERVALO_BASE_MS + jitter;
+        
+        console.log(`⏱️ Próxima difusión programada en ${(proximaEjecucion / 1000 / 60).toFixed(1)} minutos.`);
+        setTimeout(ejecutarBroadcast, proximaEjecucion);
+    }
+
+    // Primer disparo diferido (a los 5 minutos del arranque)
+    setTimeout(ejecutarBroadcast, 5 * 60 * 1000);
 }
 
 iniciarBot();
