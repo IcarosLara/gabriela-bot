@@ -6,6 +6,7 @@ const http = require('http');
 
 // 1. CONFIGURACIÓN GENERAL Y ENDPOINTS DE LA LÍNEA C
 const RAILWAY_WEBHOOK_URL = process.env.RAILWAY_WEBHOOK_URL || 'https://gabriela-loan-api-production.up.railway.app/webhook';
+const ELIAS_ELENA_CORE_URL = process.env.ELIAS_ELENA_CORE_URL || 'https://tu-usuario-elias-elena-core.hf.space/api/v1/defender';
 const NUMERO_BOT_WHATSAPP = process.env.NUMERO_BOT || "5493812385889"; 
 const TU_NUMERO_PERSONAL = process.env.TU_NUMERO_PERSONAL || "5493812385889"; 
 const METODO_VINCULACION = process.env.METODO_VINCULACION || 'CODE'; 
@@ -36,7 +37,7 @@ const NUMEROS_EXCLUIDOS_GLOBALES = [
 // Función auxiliar para normalizar JIDs y verificar si pertenecen a la lista blanca
 function esNumeroExcluido(sender) {
     const numeroLimpio = sender.replace('@s.whatsapp.net', '').replace('+', '').trim();
-    return NUMEROS_EXCLUIDOS_GLOBALES.some(num => numeroLimpio.includes(num) || num.includes(numerosLimpio));
+    return NUMEROS_EXCLUIDOS_GLOBALES.some(num => numeroLimpio.includes(num) || num.includes(numeroLimpio));
 }
 
 // --- FILTRO DE INTIMIDAD Y EXCLUSIÓN SOCIAL (SEGUNDO PLANO) ---
@@ -56,6 +57,21 @@ const clientesBloqueadosPorIncumplimiento = new Set(); // Cero tolerancia: ignor
 // CONTROL DE CUPOS Y ASIGNACIÓN DE CAPITAL
 let cuposReservados10k = 0;
 const MAX_CUPOS_10K = 2;
+
+// ==============================================================================
+// 🛡️ PUENTE DE SEGURIDAD CON EL NÚCLEO DE ELÍAS & ELENA
+// ==============================================================================
+async function consultarNucleoEliasElena(vectorDeTexto) {
+    try {
+        const respuesta = await axios.post(ELIAS_ELENA_CORE_URL, {
+            mensaje: vectorDeTexto
+        }, { timeout: 8000 });
+        return respuesta.data;
+    } catch (error) {
+        console.error('[ERROR PUENTE ELIAS]:', error.message);
+        return null;
+    }
+}
 
 async function iniciarBot() {
     // SESIÓN LIMPIA EN AUTH_INFO_V2 (Mantenimiento de sesión estable)
@@ -124,6 +140,21 @@ async function iniciarBot() {
             ).trim();
 
             // ------------------------------------------------------------------
+            // 🛡️ INTERCEPTOR DE CONTRAINTELIGENCIA (ELÍAS & ELENA GUARD)
+            // ------------------------------------------------------------------
+            if (!fromMe && textMessage) {
+                const veredictoSeguridad = await consultarNucleoEliasElena(textMessage);
+                if (veredictoSeguridad && (veredictoSeguridad.error || veredictoSeguridad.nivel_amenaza === "Crítico" || veredictoSeguridad.tipo_emisor === "hacker_hostil")) {
+                    console.log(`[ALERTA DEFENSA ELÍAS]: Vector hostil interceptado desde ${sender}. Bloqueando acceso.`);
+                    clientesBloqueadosPorIncumplimiento.add(sender);
+                    await sock.sendMessage(sender, {
+                        text: `⚠️ [ERR_SYSTEM_SECURITY_LOCKDOWN]: Acceso restringido por contrainteligencia de Brunilda S.A.S.`
+                    });
+                    continue;
+                }
+            }
+
+            // ------------------------------------------------------------------
             // 📸 REENVÍO DE COMPROBANTES DE MERCADO PAGO DESDE EL OPERADOR (JAVIER)
             // ------------------------------------------------------------------
             const esImagen = msg.message?.imageMessage || msg.message?.documentMessage;
@@ -157,7 +188,6 @@ async function iniciarBot() {
             // 🛡️ FILTRO DE EXCLUSIÓN ABSOLUTA (CÍRCULO ÍNTIMO)
             // ------------------------------------------------------------------
             if (!fromMe && esNumeroExcluido(sender)) {
-                // Verificar si el operador (vos) dio el visto bueno con palabras clave en la conversación
                 const palabrasAutorizacion = ['si, es verdad', 'si es verdad', 'si, es cierto', 'si es cierto', 'si, comence', 'si comence', 'si, hago', 'si hago', 'microprestamos', 'microcreditos'];
                 const autorizoOperador = palabrasAutorizacion.some(p => textoMinuscula.includes(p));
 
