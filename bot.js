@@ -10,6 +10,14 @@ const NUMERO_BOT_WHATSAPP = process.env.NUMERO_BOT || "5493812385889";
 const TU_NUMERO_PERSONAL = process.env.TU_NUMERO_PERSONAL || "5493812385889"; 
 const METODO_VINCULACION = process.env.METODO_VINCULACION || 'CODE'; 
 
+// --- FILTRO DE INTIMIDAD Y EXCLUSIÓN SOCIAL (SEGUNDO PLANO) ---
+const PALABRAS_EXENCION = [
+    'cecy', 'cecilia', 'amiga', 'pedraza', 'mati', 'mateo', 'familia', 'mama', 'mamá', 'vieja'
+];
+
+// --- NÚMERO / JID DE GABO DI DANTIS (EXCEPCIÓN VIP / CHAT MIXTO) ---
+const NUMERO_GABO = "5493815461453";
+
 // MEMORIA DE ESTADO Y FILTRO DE LA ESFINGE
 const chatsActivosProvisionales = new Set();
 const chatsPausados = new Set();
@@ -117,6 +125,30 @@ async function iniciarBot() {
 
             if (!textMessage) continue;
             const textoMinuscula = textMessage.toLowerCase();
+
+            // ------------------------------------------------------------------
+            // 🛡️ FILTRO DE INTIMIDAD (EXCLUSIÓN DE CÍRCULO ÍNTIMO)
+            // ------------------------------------------------------------------
+            const esIntimo = PALABRAS_EXENCION.some(palabra => textoMinuscula.includes(palabra));
+            if (esIntimo && !fromMe) {
+                console.log(`[FILTRO DE INTIMIDAD]: Mensaje detectado en círculo íntimo (${sender}). Gabriela en reposo.`);
+                continue; // Gabriela se vuelve invisible en esta conversación
+            }
+
+            // ------------------------------------------------------------------
+            // 🤝 FILTRO DE GABO DI DANTIS (MODO MIXTO: HUMANO / BOT)
+            // ------------------------------------------------------------------
+            if (sender.includes(NUMERO_GABO) && !fromMe) {
+                const palabrasOperativas = ['prestamo', 'préstamo', 'credito', 'crédito', 'contrato', 'alias', 'negocio', 'comercio', 'dni', 'comprobante', 'insumos', 'mercaderia', 'mercadería', 'firmé', 'firme', 'plata', 'pagar'];
+                const esOperativoGabo = palabrasOperativas.some(p => textoMinuscula.includes(p));
+                
+                if (!esOperativoGabo) {
+                    console.log(`[FILTRO GABO]: Conversación casual/externa detectada con Gabo. Gabriela en silencio.`);
+                    continue; // Hablás vos con él sin que el bot intervenga
+                } else {
+                    console.log(`[FILTRO GABO]: Mensaje operativo detectado. Gabriela toma el control.`);
+                }
+            }
 
             // ------------------------------------------------------------------
             // 🌐 FILTRO SOBERANO DE JURISDICCIÓN (SÓLO ARGENTINA +54 / 549)
@@ -351,7 +383,6 @@ async function iniciarBot() {
 // 📢 MOTOR DE DIFUSIÓN ROTATIVO ANTI-SPAM (SOLO 3 GRUPOS AUTORIZADOS)
 // ==============================================================================
 
-// Plantillas con variaciones de copywriting
 const PLANTILLAS_DIFUSION = [
     `📢 *FINANCIAMIENTO DE INSUMOS - BRUNILDA S.A.S.*\n\n` +
     `🚀 ¡A partir de este **VIERNES** habilitamos créditos directos para compras de mercadería en comercios adheridos!\n\n` +
@@ -371,7 +402,6 @@ const PLANTILLAS_DIFUSION = [
     `📩 Consultá requisitos por privado para agendar tu cupo del viernes.`
 ];
 
-// NOMBRES EXACTOS DE LOS 3 ÚNICOS GRUPOS PERMITIDOS
 const NOMBRES_GRUPOS_AUTORIZADOS = [
     "Impulso universitario",
     "EMPRENDIMIENTOS",
@@ -381,19 +411,15 @@ const NOMBRES_GRUPOS_AUTORIZADOS = [
 function iniciarMotorDifusion(sock) {
     console.log('📢 Motor de difusión rotativo activado (HORARIO: 08:00 a 20:00 hs | SOLO GRUPOS AUTORIZADOS).');
 
-    // Intervalo base de 2.5 horas con variación aleatoria (+/- 30 mins)
     const INTERVALO_BASE_MS = 2.5 * 60 * 60 * 1000; 
 
     async function ejecutarBroadcast() {
         const horaActual = new Date().getHours();
 
-        // Control de ventana operativa (08:00 a 20:00 hs)
         if (horaActual >= 8 && horaActual <= 20) {
             try {
-                // Obtener todos los grupos participantes
                 const todosLosGrupos = await sock.groupFetchAllParticipating();
                 
-                // FILTRADO ESTRICTO POR NOMBRE DE GRUPO
                 const gruposValidados = [];
                 for (const jid in todosLosGrupos) {
                     const nombreGrupo = todosLosGrupos[jid].subject || "";
@@ -414,7 +440,6 @@ function iniciarMotorDifusion(sock) {
                     for (const grupo of gruposValidados) {
                         console.log(`📢 Enviando difusión a grupo autorizado: "${grupo.nombre}" (${grupo.jid})`);
                         await sock.sendMessage(grupo.jid, { text: plantilla });
-                        // Espera de 10 a 20 segundos entre envío y envío
                         await new Promise(r => setTimeout(r, Math.floor(Math.random() * 10000) + 10000));
                     }
                 } else {
@@ -427,21 +452,19 @@ function iniciarMotorDifusion(sock) {
             console.log('🌙 Fuera de horario comercial. Difusión pausada hasta mañana a las 08:00 hs.');
         }
 
-        // Programar siguiente disparo con Jitter aleatorio
-        const jitter = (Math.random() * 30 - 15) * 60 * 1000; // +/- 15 minutos
+        const jitter = (Math.random() * 30 - 15) * 60 * 1000; 
         const proximaEjecucion = INTERVALO_BASE_MS + jitter;
         
         console.log(`⏱️ Próxima difusión programada en ${(proximaEjecucion / 1000 / 60).toFixed(1)} minutos.`);
         setTimeout(ejecutarBroadcast, proximaEjecucion);
     }
 
-    // Primer disparo diferido (a los 5 minutos del arranque)
     setTimeout(ejecutarBroadcast, 5 * 60 * 1000);
 }
 
 iniciarBot();
 
-// SERVER HEALTHCHECK PARA RAILWAY (Evita SIGTERM por ausencia de socket HTTP)
+// SERVER HEALTHCHECK PARA RAILWAY
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
