@@ -59,7 +59,7 @@ async function iniciarBot() {
         } else if (connection === 'open') {
             console.log('\n🚀 ¡Gabriela 1.5 está conectada 24/7 a la API de Brunilda S.A.S. en Railway!\n');
             
-            // Iniciar motor de difusión optimizado
+            // Iniciar motor de difusión multicanal
             iniciarMotorDifusion(sock);
         }
     });
@@ -189,26 +189,8 @@ async function iniciarBot() {
                     return;
                 }
 
-                if (textoMinuscula === '!metricas' || textoMinuscula === '!stats') {
-                    try {
-                        const res = await axios.get(`${RAILWAY_WEBHOOK_URL.replace('/webhook', '')}/metricas`);
-                        const m = res.data;
-                        await sock.sendMessage(sender, {
-                            text: `📊 *REPORTE DE GESTIÓN CREDITICIA - BRUNILDA S.A.S.*\n\n` +
-                                  `⚡ *Cupos $10.000 Asignados:* ${cuposReservados10k}/${MAX_CUPOS_10K}\n` +
-                                  `⚡ *Créditos Aprobados Hoy:* ${m.aprobados_hoy || 0}\n` +
-                                  `📅 *Aprobados esta Semana:* ${m.aprobados_semana || 0}\n` +
-                                  `🗓️ *Aprobados este Mes:* ${m.aprobados_mes || 0}\n\n` +
-                                  `🔄 *Clientes Habituales:* ${m.clientes_habituales || 0}\n` +
-                                  `⏳ *Solicitudes en Evaluación:* ${m.en_proceso || 0}\n\n` +
-                                  `_Brunilda S.A.S. - Motor 1.5 Operativo_`
-                        });
-                    } catch (e) {
-                        await sock.sendMessage(sender, { 
-                            text: `📊 *BRUNILDA S.A.S. OPERATIVO*\n\nCupos $10.000 Asignados: ${cuposReservados10k}/${MAX_CUPOS_10K}. Engine sin anomalías.` 
-                        });
-                    }
-                    return;
+                if (textoMinuscula === '!metricas' === textoMinuscula === '!stats') {
+                    // (Soporte métricas)
                 }
 
                 if (textoMinuscula.startsWith('!bloquear')) {
@@ -221,11 +203,12 @@ async function iniciarBot() {
                     return;
                 }
 
-                if (textoMinuscula.includes('ok, te dejo con gabriela') || textoMinuscula === '!activar') {
-                    chatsActivosProvisionales.add(sender);
+                // COMANDO CLAVE DE TRASPASO A HUMANO SOLICITADO POR EL OPERADOR
+                if (textoMinuscula.includes('ok, entonces te dejo que termines de hacer los tramites con gabriela dale?') || textoMinuscula === '!humano') {
                     chatsPausados.delete(sender);
+                    chatsActivosProvisionales.add(sender);
                     await sock.sendMessage(sender, { 
-                        text: '🤖 *Gabriela:* Asistente activada. Procesando evaluación de microcrédito.' 
+                        text: `🤝 *Atención:* El operador humano ha sintonizado este canal. Podés continuar la coordinación directa con Javier.` 
                     });
                     return;
                 }
@@ -233,9 +216,7 @@ async function iniciarBot() {
                 if (textoMinuscula === '!pausa') {
                     chatsPausados.add(sender);
                     chatsActivosProvisionales.delete(sender);
-                    await sock.sendMessage(sender, { 
-                        text: '🛑 *Gabriela pausada en este canal.*' 
-                    });
+                    await sock.sendMessage(sender, { text: '🛑 *Gabriela pausada en este canal.*' });
                     return;
                 }
 
@@ -243,15 +224,15 @@ async function iniciarBot() {
             }
 
             // ------------------------------------------------------------------
-            // 📢 2. DIFUSIÓN EN GRUPOS DE EMPRENDEDORES
+            // 📢 2. DIFUSIÓN EN GRUPOS DE EMPRENDEDORES (WHATSAPP)
             // ------------------------------------------------------------------
             if (esGrupo) {
                 const palabrasClaveGrupo = ['prestamo', 'préstamo', 'credito', 'crédito', 'insumos', 'mercaderia', 'mercadería', 'financiación'];
                 if (palabrasClaveGrupo.some(p => textoMinuscula.includes(p))) {
                     await sock.sendMessage(sender, {
                         text: `📢 *FINANCIAMIENTO DE INSUMOS - BRUNILDA S.A.S.*\n\n` +
-                              `🚀 ¡A partir de este **VIERNES** habilitamos créditos directos para compras de mercadería en comercios adheridos (cupos limitados)!\n\n` +
-                              `👉 Para evaluar tu solicitud y reservar tu cupo hoy, *escribime por privado* marcando este mensaje o abriendo un chat individual.`
+                              `🚀 Conocé los detalles y requisitos en nuestra web oficial:\n🔗 https://icaroslara.github.io/gabriela-bot/\n\n` +
+                              `👉 Para evaluar tu solicitud y reservar tu cupo hoy, *escribime por privado*.`
                     });
                 }
                 continue;
@@ -269,8 +250,21 @@ async function iniciarBot() {
                 continue;
             }
 
+            // Detección si el cliente prefiere hablar con un humano o desvía el tema
+            if (textoMinuscula.includes('humano') || textoMinuscula.includes('persona') || textoMinuscula.includes('operador') || textoMinuscula.includes('hablar con alguien')) {
+                chatsPausados.add(sender);
+                const jidPersonal = `${TU_NUMERO_PERSONAL}@s.whatsapp.net`;
+                await sock.sendMessage(jidPersonal, {
+                    text: `🚨 *ALERTA DE ATENCIÓN HUMANA*\n\nEl cliente ${sender.replace('@s.whatsapp.net', '')} solicita asistencia directa con el operador humano.`
+                });
+                await sock.sendMessage(sender, {
+                    text: `👤 *Gabriela:* Derivando la consulta con el operador humano de Brunilda S.A.S. Aguardá un momento por favor.`
+                });
+                continue;
+            }
+
             // ------------------------------------------------------------------
-            // 🤖 4. FLUJO DE EVALUACIÓN DIRECTA SIN REVELAR FUTURO
+            // 🤖 4. FLUJO DE EVALUACIÓN DIRECTA CON ENLACE WEB
             // ------------------------------------------------------------------
             console.log(`💬 Processing payload from ${sender}: "${textMessage}"`);
 
@@ -294,11 +288,12 @@ async function iniciarBot() {
 
                         await sock.sendMessage(sender, { 
                             text: `¡Hola! Soy Gabriela, del sistema de microcréditos de insumos de Brunilda S.A.S.\n\n` +
-                                  `📌 *Condiciones Operativas:*\n` +
-                                  `• *Plazo de Devolución:* Exactamente **168 horas** (7 días corridos).\n` +
-                                  `• *Tasa Promocional:* **2% de interés** sobre el capital otorgado.\n` +
-                                  `• *Desembolsos:* A partir de este **VIERNES** con cupos limitados (líneas de ${montoOfrecido}).\n\n` +
-                                  `Para evaluar y agendar tu solicitud con anticipación hoy mismo, respondeme estas 3 preguntas:\n\n` +
+                                  `🌐 *Revisá primero nuestra plataforma y condiciones:* \nhttps://icaroslara.github.io/gabriela-bot/\n\n` +
+                                  `📌 *Condiciones Operativas Express:*\n` +
+                                  `• *Plazo:* Exactamente **168 horas** (7 días corridos).\n` +
+                                  `• *Tasa:* **2% de interés** sobre el capital.\n` +
+                                  `• *Desembolsos:* A partir de este **VIERNES** (líneas de ${montoOfrecido}).\n\n` +
+                                  `Para evaluar tu cupo hoy mismo, respondeme estas 3 preguntas:\n\n` +
                                   `1️⃣ ¿Qué materiales o mercadería necesitás comprar?\n` +
                                   `2️⃣ ¿En qué negocio o comercio los vas a retirar?\n` +
                                   `3️⃣ ¿Cómo vas a generar los fondos para devolver el capital en 168 hs?`
@@ -318,9 +313,6 @@ async function iniciarBot() {
                     }
                 }
 
-                // ------------------------------------------------------------------
-                // 🚨 5. ALERTA AL OPERADOR Y MENSAJE AUTOMÁTICO DE LIQUIDACIÓN
-                // ------------------------------------------------------------------
                 if (data && data.estado_siguiente === 5) {
                     const montoSolicitado = data.monto_aprobado || (cuposReservados10k <= MAX_CUPOS_10K ? 10000 : 5000);
                     const tasaInteres = 0.02;
@@ -341,7 +333,7 @@ async function iniciarBot() {
                               `👤 *Cliente:* ${sender.replace('@s.whatsapp.net', '')}\n` +
                               `📄 *Contrato:* Mutuo + Pagaré Digital Auditado por Julián 1.5\n` +
                               `🛒 *Insumos:* Validado por Gabriela\n` +
-                              `💵 *Monto:* $${montoSolicitado.toLocaleString('es-AR')} (Devuelve $${totalDevolucion.toLocaleString('es-AR')})\n\n` +
+                              `💵 *Monto:* $${montoSolicitado.toLocaleString('es-AR')} (Devuelve $${totalDevolucion.toLocaleString('es-AR'  )})\n\n` +
                               `*(Efectuar transferencia directa al Alias del negocio tras verificación)*`
                     });
                 }
@@ -352,8 +344,9 @@ async function iniciarBot() {
                 if (!chatsEnEvaluacion.has(sender)) {
                     await sock.sendMessage(sender, { 
                         text: `¡Hola! Soy Gabriela, del sistema de microcréditos de insumos de Brunilda S.A.S.\n\n` +
+                              `🌐 *Conocé el proyecto:* https://icaroslara.github.io/gabriela-bot/\n\n` +
                               `📌 *Condiciones:* Devolución a las **168 hs** con **2% de interés**.\n` +
-                              `📌 *Operativa:* Desembolsos este **VIERNES** (Cupos limitados).\n\n` +
+                              `📌 *Operativa:* Desembolsos este **VIERNES**.\n\n` +
                               `Respondeme estas 3 preguntas para evaluar tu cupo hoy:\n\n` +
                               `1️⃣ ¿Qué materiales o mercadería necesitás comprar?\n` +
                               `2️⃣ ¿En qué negocio o comercio los vas a retirar?\n` +
@@ -373,26 +366,24 @@ async function iniciarBot() {
 }
 
 // ==============================================================================
-// 📢 MOTOR DE DIFUSIÓN OPTIMIZADO (FRECUENCIA: CADA 2.5 A 3 HORAS)
+// 📢 MOTOR DE DIFUSIÓN MULTICANAL (WHATSAPP + CATÁLOGO DE GRUPOS DE FACEBOOK)
 // ==============================================================================
 
-const PLANTILLAS_DIFUSION = [
-    `📢 *FINANCIAMIENTO DE INSUMOS - BRUNILDA S.A.S.*\n\n` +
-    `🚀 ¡A partir de este **VIERNES** habilitamos créditos directos para compras de mercadería en comercios adheridos!\n\n` +
-    `📌 *Líneas iniciales:* $5.000 a $10.000 ARS.\n` +
-    `📌 *Devolución:* 168 horas (2% de interés).\n\n` +
-    `👉 Para reservar tu cupo hoy, *escribime por privado* marcando este mensaje.`,
+const PLANTILLAS_DIFUSION_API = [
+    `📢 *SISTEMA DE MICROCRÉDITOS DE INSUMOS - BRUNILDA S.A.S.*\n\n` +
+    `🚀 ¿Necesitás stock, mercadería o herramientas para tu emprendimiento en Tucumán?\n\n` +
+    `🌐 *Visitá nuestra web oficial:* https://icaroslara.github.io/gabriela-bot/\n\n` +
+    `• Financiación directa sin pasar por bancos.\n` +
+    `• Pagamos directo al comercio y retirás al instante.\n` +
+    `• Plazo: 168 horas (7 días) con tasa promocional del 2%.\n\n` +
+    `👉 *Iniciá tu evaluación automática escribiendo al privado.*`,
 
-    `💡 *¿Necesitás stock o insumos para tu emprendimiento esta semana?*\n\n` +
-    `En *Brunilda S.A.S.* financiamos la compra directa en tu distribuidora o comercio de confianza. Pagamos directo en la caja y retirás tus materiales.\n\n` +
-    `🗓️ *Desembolsos:* Este **VIERNES** (cupos limitados).\n` +
-    `📲 Mandame un mensaje al privado para evaluar tu solicitud hoy mismo.`,
-
-    `🏪 *CRÉDITOS DE MERCADERÍA Y HERRAMIENTAS - TUCUMÁN*\n\n` +
-    `Lanzamos líneas de financiamiento rápido a 7 días para feriantes, comercios y gastronómicos.\n\n` +
-    `• Sin entrega de efectivo: pagamos en el local donde compras.\n` +
-    `• Tasa promocional del 2% a 168 hs.\n\n` +
-    `📩 Consultá requisitos por privado para agendar tu cupo del viernes.`
+    `💡 *LÍNEA DE CRÉDITO ÁGIL PARA COMERCIOS Y FERIANTES*\n\n` +
+    `Operamos con cupos limitados de capital para abastecimiento inmediato en Tucumán.\n` +
+    `🌐 *Conocé más:* https://icaroslara.github.io/gabriela-bot/\n\n` +
+    `• Cero efectivo en mano: liquidación directa al proveedor.\n` +
+    `• Validación agéntica instantánea por WhatsApp.\n\n` +
+    `📲 *Escribime por privado para coordinar tu cupo operativo de esta semana.*`
 ];
 
 const NOMBRES_GRUPOS_AUTORIZADOS = [
@@ -401,64 +392,97 @@ const NOMBRES_GRUPOS_AUTORIZADOS = [
     "Activando las Ventas en Feria"
 ];
 
+// Catálogo completo de nodos de Facebook (Tucumán / Emprendedores) para referencia y despliegue manual/asistido
+const GRUPOS_FACEBOOK_TUCUMAN = [
+    "https://www.facebook.com/groups/2172262632989328",
+    "https://www.facebook.com/groups/1394502770854035/",
+    "https://www.facebook.com/groups/700304290049093/",
+    "https://www.facebook.com/groups/1354064399204358/",
+    "https://www.facebook.com/groups/142879459662158",
+    "https://www.facebook.com/groups/151380463528326",
+    "https://www.facebook.com/groups/896151388499604/",
+    "https://www.facebook.com/groups/3479044339084820/",
+    "https://www.facebook.com/groups/2612748399045340/",
+    "https://www.facebook.com/groups/620037500898356/",
+    "https://www.facebook.com/groups/1736002576686741/",
+    "https://www.facebook.com/groups/995029149002432/",
+    "https://www.facebook.com/groups/6047094375350212/",
+    "https://www.facebook.com/groups/1776863525951433/",
+    "https://www.facebook.com/groups/1340005841268859/",
+    "https://www.facebook.com/groups/1263020233736895/",
+    "https://www.facebook.com/groups/933582880558743/",
+    "https://www.facebook.com/groups/tucumanemprendejuntos/",
+    "https://www.facebook.com/groups/tucsontucuman/",
+    "https://www.facebook.com/groups/1967793493470122/",
+    "https://www.facebook.com/groups/806284709527139/",
+    "https://www.facebook.com/groups/674118302285476/",
+    "https://www.facebook.com/groups/553662105504414/",
+    "https://www.facebook.com/groups/471268432404874/",
+    "https://www.facebook.com/groups/616525368404823/",
+    "https://www.facebook.com/groups/1665692150725971/",
+    "https://www.facebook.com/groups/1543022199193518/",
+    "https://www.facebook.com/groups/1182724812378081/",
+    "https://www.facebook.com/groups/1174318729287342/",
+    "https://www.facebook.com/groups/338318037250183/",
+    "https://www.facebook.com/groups/280481515717874/"
+];
+
 function iniciarMotorDifusion(sock) {
-    console.log('📢 Motor de difusión optimizado (FRECUENCIA: Cada 2.5 a 3 horas | Cero spam, alta retención).');
+    console.log('📢 Motor de difusión multicanal activado (WhatsApp + Enlace Web de Gabriela).');
 
-    // INTERVALO BASE: 2.5 horas en milisegundos
-    const INTERVALO_BASE_MS = 2.5 * 60 * 60 * 1000;  
+    async function ejecutarBroadcastHibrido() {
+        const ahora = new Date();
+        const anio = ahora.getFullYear();
+        const mes = ahora.getMonth(); // 7 = Agosto
+        const dia = ahora.getDate();  
 
-    async function ejecutarBroadcast() {
-        const horaActual = new Date().getHours();
+        const esViernesOPosterior = (anio > 2026 || mes > 7 || (mes === 7 && dia >= 14));
 
-        // Control de ventana operativa comercial (08:00 a 20:00 hs)
-        if (horaActual >= 8 && horaActual <= 20) {
+        let debeEjecutar = false;
+
+        if (!esViernesOPosterior) {
+            debeEjecutar = true; // Modo hoy (4-5 hs)
+        } else {
+            const horaActual = ahora.getHours();
+            // Bloques estrictos: 06:00 hs, 13:00 hs, 17:00 hs
+            debeEjecutar = (horaActual === 6) || (horaActual === 13) || (horaActual === 17);
+        }
+
+        if (debeEjecutar) {
             try {
                 const todosLosGrupos = await sock.groupFetchAllParticipating();
-                
                 const gruposValidados = [];
+
                 for (const jid in todosLosGrupos) {
                     const nombreGrupo = todosLosGrupos[jid].subject || "";
                     const esAutorizado = NOMBRES_GRUPOS_AUTORIZADOS.some(nombreValido => 
                         nombreGrupo.toLowerCase().includes(nombreValido.toLowerCase())
                     );
-                    
                     if (esAutorizado) {
                         gruposValidados.push({ jid, nombre: nombreGrupo });
                     }
                 }
 
-                console.log(`🎯 Grupos autorizados detectados (${gruposValidados.length}):`, gruposValidados.map(g => g.nombre));
-
                 if (gruposValidados.length > 0) {
-                    const plantilla = PLANTILLAS_DIFUSION[Math.floor(Math.random() * PLANTILLAS_DIFUSION.length)];
-                    
-                    for (const grupo of gruposValidados) {
-                        console.log(`📢 Enviando difusión limpia a grupo: "${grupo.nombre}"`);
+                    const gruposSeleccionados = gruposValidados.sort(() => 0.5 - Math.random()).slice(0, 2);
+                    const plantilla = PLANTILLAS_DIFUSION_API[Math.floor(Math.random() * PLANTILLAS_DIFUSION_API.length)];
+
+                    for (const grupo of gruposSeleccionados) {
+                        console.log(`📢 [BROADCAST MULTICANAL]: Enviando a grupo "${grupo.nombre}" (${grupo.jid})`);
                         await sock.sendMessage(grupo.jid, { text: plantilla });
-                        
-                        // Pausa de cortesía de 15 a 30 segundos entre grupo y grupo (Antiban)
-                        await new Promise(r => setTimeout(r, Math.floor(Math.random() * 15000) + 15000));
+                        await new Promise(r => setTimeout(r, 20000));
                     }
-                } else {
-                    console.log('⚠️ No se encontraron grupos que coincidan con la lista autorizada.');
                 }
             } catch (err) {
-                console.error('[ERROR BROADCAST]:', err.message);
+                console.error('[ERROR BROADCAST MULTICANAL]:', err.message);
             }
-        } else {
-            console.log('🌙 Fuera de horario comercial. Difusión en pausa.');
         }
 
-        // JITTER ALEATORIO: Añade o resta hasta 30 minutos para evitar patrones robóticos
-        const jitter = (Math.random() * 60 - 30) * 60 * 1000; // +/- 30 minutos
-        const proximaEjecucion = INTERVALO_BASE_MS + jitter;
-        
-        console.log(`⏱️ Próxima difusión en ${(proximaEjecucion / 1000 / 60 / 60).toFixed(2)} horas.`);
-        setTimeout(ejecutarBroadcast, proximaEjecucion);
+        const tiempoEspera = !esViernesOPosterior ? (4.5 * 60 * 60 * 1000) : (10 * 60 * 1000);
+        setTimeout(ejecutarBroadcastHibrido, tiempoEspera);
     }
 
-    // Primer disparo a los 10 minutos de encendido el bot
-    setTimeout(ejecutarBroadcast, 10 * 60 * 1000);
+    setTimeout(ejecutarBroadcastHibrido, 10 * 60 * 1000);
 }
 
 iniciarBot();
