@@ -4,6 +4,17 @@ const axios = require('axios');
 const pino = require('pino');
 const http = require('http');
 
+// ==============================================================================
+// 🛡️ MANEJO GLOBAL DE EXCEPCIONES (PREVENCIÓN DE CRASH POR SIGTERM EN CLOUD)
+// ==============================================================================
+process.on('uncaughtException', (err) => {
+    console.error('[EXCEPCIÓN NO CONTROLADA]:', err.message);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[PROMESA RECHAZADA NO CONTROLADA]:', reason);
+});
+
 // 1. CONFIGURACIÓN GENERAL Y ENDPOINTS DE LA LÍNEA C
 const RAILWAY_WEBHOOK_URL = process.env.RAILWAY_WEBHOOK_URL || 'https://gabriela-loan-api-production.up.railway.app/webhook';
 const ELIAS_ELENA_CORE_URL = process.env.ELIAS_ELENA_CORE_URL || 'https://tu-usuario-elias-elena-core.hf.space/api/v1/defender';
@@ -37,7 +48,7 @@ const NUMEROS_EXCLUIDOS_GLOBALES = [
 // Función auxiliar para normalizar JIDs y verificar si pertenecen a la lista blanca
 function esNumeroExcluido(sender) {
     const numeroLimpio = sender.replace('@s.whatsapp.net', '').replace('+', '').trim();
-    return NUMEROS_EXCLUIDOS_GLOBALES.some(num => numeroLimpio.includes(num) || num.includes(numeroLimpio));
+    return NUMEROS_EXCLUIDOS_GLOBALES.some(num => numeroLimpio.includes(num) || num.includes(numerosLimpio));
 }
 
 // --- FILTRO DE INTIMIDAD Y EXCLUSIÓN SOCIAL (SEGUNDO PLANO) ---
@@ -99,7 +110,7 @@ async function iniciarBot() {
             const shouldReconnect = (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut);
             console.log('[RED]: Conexión cerrada. Reconectando...', shouldReconnect);
             if (shouldReconnect) {
-                setTimeout(() => iniciarBot(), 3000);
+                setTimeout(() => iniciarBot(), 5000); // Margen ampliado de reconexión
             }
         } else if (connection === 'open') {
             console.log('\n🚀 ¡Gabriela 1.5 está conectada 24/7 a la API de Brunilda S.A.S. en Railway!\n');
@@ -109,7 +120,7 @@ async function iniciarBot() {
         }
     });
 
-    // CÓDIGO DE PAIRING
+    // CÓDIGO DE PAIRING (Ampliación del buffer de espera a 12 segundos para asegurar vinculación estable)
     if (!sock.authState.creds.registered && METODO_VINCULACION === 'CODE') {
         setTimeout(async () => {
             try {
@@ -120,7 +131,7 @@ async function iniciarBot() {
             } catch (err) {
                 console.error('[ERROR PAIRING]:', err.message);
             }
-        }, 4000);
+        }, 12000);
     }
 
     // 3. PROCESAMIENTO DE MENSAJES Y FILTROS
