@@ -59,7 +59,7 @@ async function iniciarBot() {
         } else if (connection === 'open') {
             console.log('\n🚀 ¡Gabriela 1.5 está conectada 24/7 a la API de Brunilda S.A.S. en Railway!\n');
             
-            // Iniciar motor de difusión rotativo
+            // Iniciar motor de difusión optimizado
             iniciarMotorDifusion(sock);
         }
     });
@@ -102,14 +102,12 @@ async function iniciarBot() {
             if (fromMe && esImagen) {
                 const caption = (msg.message?.imageMessage?.caption || msg.message?.documentMessage?.caption || '').trim();
                 
-                // Si la captura incluye el comando !comprobante + número del cliente
                 if (caption.startsWith('!comprobante')) {
                     const numeroCliente = caption.replace('!comprobante', '').trim();
                     const jidDestino = numeroCliente.includes('@s.whatsapp.net') ? numeroCliente : `${numeroCliente}@s.whatsapp.net`;
                     
                     console.log(`📸 Reenviando comprobante de pago al cliente: ${jidDestino}`);
 
-                    // Reenvía la imagen con el formato oficial de Brunilda S.A.S.
                     await sock.sendMessage(jidDestino, {
                         image: msg.message.imageMessage ? { url: msg.message.imageMessage.url } : undefined,
                         document: msg.message.documentMessage ? { url: msg.message.documentMessage.url } : undefined,
@@ -132,7 +130,7 @@ async function iniciarBot() {
             const esIntimo = PALABRAS_EXENCION.some(palabra => textoMinuscula.includes(palabra));
             if (esIntimo && !fromMe) {
                 console.log(`[FILTRO DE INTIMIDAD]: Mensaje detectado en círculo íntimo (${sender}). Gabriela en reposo.`);
-                continue; // Gabriela se vuelve invisible en esta conversación
+                continue; 
             }
 
             // ------------------------------------------------------------------
@@ -144,7 +142,7 @@ async function iniciarBot() {
                 
                 if (!esOperativoGabo) {
                     console.log(`[FILTRO GABO]: Conversación casual/externa detectada con Gabo. Gabriela en silencio.`);
-                    continue; // Hablás vos con él sin que el bot intervenga
+                    continue; 
                 } else {
                     console.log(`[FILTRO GABO]: Mensaje operativo detectado. Gabriela toma el control.`);
                 }
@@ -163,7 +161,7 @@ async function iniciarBot() {
                           `Estimado/a. El sistema de microcréditos de insumos con liquidación directa a comercios opera actualmente de forma exclusiva en la *República Argentina*.\n\n` +
                           `💼 *Para licencias de software, integración de la API de Evaluación Agéntica o alianzas internacionales:* Escriba a la dirección oficial de la empresa o aguarde la apertura de mercados regionales en nuestra próxima fase de expansión.`
                 });
-                return; // Frena el flujo y no envía el payload a Python
+                return; 
             }
 
             // ⛔ FILTRO DE LA ESFINGE: SI INCUMPLIÓ, EL BOT LO IGNORA
@@ -176,7 +174,6 @@ async function iniciarBot() {
             // 👑 1. COMANDOS DE ADMINISTRACIÓN / OPERADOR (fromMe === true)
             // ------------------------------------------------------------------
             if (fromMe) {
-                // COMANDO DINÁMICO DE BÓVEDA (Ajuste de capital en vivo)
                 if (textoMinuscula.startsWith('!boveda')) {
                     const nuevoMonto = parseFloat(textoMinuscula.replace('!boveda', '').trim());
                     if (!isNaN(nuevoMonto)) {
@@ -295,7 +292,6 @@ async function iniciarBot() {
                             montoOfrecido = "$5.000 a $10.000";
                         }
 
-                        // FASE 1: PRIMER CONTACTO - CRUDA Y DIRECTA
                         await sock.sendMessage(sender, { 
                             text: `¡Hola! Soy Gabriela, del sistema de microcréditos de insumos de Brunilda S.A.S.\n\n` +
                                   `📌 *Condiciones Operativas:*\n` +
@@ -309,7 +305,6 @@ async function iniciarBot() {
                         });
                         chatsEnEvaluacion.add(sender);
                     } else {
-                        // FASE 2: VERIFICACIÓN Y FIRMA DIGITAL DE MUTUO + PAGARÉ
                         await sock.sendMessage(sender, { 
                             text: `¡Perfecto! Para avanzar con el agendamiento y la firma del **Contrato de Mutuo Digital + Pagaré Electrónico** con Brunilda S.A.S.:\n\n` +
                                   `📷 1. Enviame foto de tu DNI (frente y dorso) y una selfie de tu rostro.\n` +
@@ -331,7 +326,6 @@ async function iniciarBot() {
                     const tasaInteres = 0.02;
                     const totalDevolucion = montoSolicitado * (1 + tasaInteres);
 
-                    // A) Notificación al cliente con resumen formal de la deuda
                     await sock.sendMessage(sender, {
                         text: `🎉 *¡Tu crédito de insumos ha sido otorgado!*\n\n` +
                               `📋 *Resumen de la operación:*\n` +
@@ -341,7 +335,6 @@ async function iniciarBot() {
                               `• *Plazo límite de pago:* Exactamente **168 horas** contadas a partir de la transferencia.`
                     });
 
-                    // B) Notificación de ejecución para el Propietario/Operador
                     const jidPersonal = `${TU_NUMERO_PERSONAL}@s.whatsapp.net`;
                     await sock.sendMessage(jidPersonal, {
                         text: `🚨 *SOLICITUD LISTA PARA DESEMBOLSO*\n\n` +
@@ -380,7 +373,7 @@ async function iniciarBot() {
 }
 
 // ==============================================================================
-// 📢 MOTOR DE DIFUSIÓN ROTATIVO ANTI-SPAM (SOLO 3 GRUPOS AUTORIZADOS)
+// 📢 MOTOR DE DIFUSIÓN OPTIMIZADO (FRECUENCIA: CADA 2.5 A 3 HORAS)
 // ==============================================================================
 
 const PLANTILLAS_DIFUSION = [
@@ -409,13 +402,15 @@ const NOMBRES_GRUPOS_AUTORIZADOS = [
 ];
 
 function iniciarMotorDifusion(sock) {
-    console.log('📢 Motor de difusión rotativo activado (HORARIO: 08:00 a 20:00 hs | SOLO GRUPOS AUTORIZADOS).');
+    console.log('📢 Motor de difusión optimizado (FRECUENCIA: Cada 2.5 a 3 horas | Cero spam, alta retención).');
 
-    const INTERVALO_BASE_MS = 2.5 * 60 * 60 * 1000; 
+    // INTERVALO BASE: 2.5 horas en milisegundos
+    const INTERVALO_BASE_MS = 2.5 * 60 * 60 * 1000;  
 
     async function ejecutarBroadcast() {
         const horaActual = new Date().getHours();
 
+        // Control de ventana operativa comercial (08:00 a 20:00 hs)
         if (horaActual >= 8 && horaActual <= 20) {
             try {
                 const todosLosGrupos = await sock.groupFetchAllParticipating();
@@ -438,9 +433,11 @@ function iniciarMotorDifusion(sock) {
                     const plantilla = PLANTILLAS_DIFUSION[Math.floor(Math.random() * PLANTILLAS_DIFUSION.length)];
                     
                     for (const grupo of gruposValidados) {
-                        console.log(`📢 Enviando difusión a grupo autorizado: "${grupo.nombre}" (${grupo.jid})`);
+                        console.log(`📢 Enviando difusión limpia a grupo: "${grupo.nombre}"`);
                         await sock.sendMessage(grupo.jid, { text: plantilla });
-                        await new Promise(r => setTimeout(r, Math.floor(Math.random() * 10000) + 10000));
+                        
+                        // Pausa de cortesía de 15 a 30 segundos entre grupo y grupo (Antiban)
+                        await new Promise(r => setTimeout(r, Math.floor(Math.random() * 15000) + 15000));
                     }
                 } else {
                     console.log('⚠️ No se encontraron grupos que coincidan con la lista autorizada.');
@@ -449,17 +446,19 @@ function iniciarMotorDifusion(sock) {
                 console.error('[ERROR BROADCAST]:', err.message);
             }
         } else {
-            console.log('🌙 Fuera de horario comercial. Difusión pausada hasta mañana a las 08:00 hs.');
+            console.log('🌙 Fuera de horario comercial. Difusión en pausa.');
         }
 
-        const jitter = (Math.random() * 30 - 15) * 60 * 1000; 
+        // JITTER ALEATORIO: Añade o resta hasta 30 minutos para evitar patrones robóticos
+        const jitter = (Math.random() * 60 - 30) * 60 * 1000; // +/- 30 minutos
         const proximaEjecucion = INTERVALO_BASE_MS + jitter;
         
-        console.log(`⏱️ Próxima difusión programada en ${(proximaEjecucion / 1000 / 60).toFixed(1)} minutos.`);
+        console.log(`⏱️ Próxima difusión en ${(proximaEjecucion / 1000 / 60 / 60).toFixed(2)} horas.`);
         setTimeout(ejecutarBroadcast, proximaEjecucion);
     }
 
-    setTimeout(ejecutarBroadcast, 5 * 60 * 1000);
+    // Primer disparo a los 10 minutos de encendido el bot
+    setTimeout(ejecutarBroadcast, 10 * 60 * 1000);
 }
 
 iniciarBot();
