@@ -10,6 +10,35 @@ const NUMERO_BOT_WHATSAPP = process.env.NUMERO_BOT || "5493812385889";
 const TU_NUMERO_PERSONAL = process.env.TU_NUMERO_PERSONAL || "5493812385889"; 
 const METODO_VINCULACION = process.env.METODO_VINCULACION || 'CODE'; 
 
+// ==============================================================================
+// 🛡️ LISTA BLANCA DE EXCLUSIÓN TOTAL (CÍRCULO ÍNTIMO Y COLEGAS)
+// ==============================================================================
+const NUMEROS_EXCLUIDOS_GLOBALES = [
+    "5493815115726", // Mariana Pereyra
+    "5493815201497", // Cecy Lara
+    "5493813218727", // Sofia Orellana
+    "5493815464065", // Lucas Pedraza
+    "5493813495051", // Daniel Aracena
+    "5493813495051", // Matias Lara
+    "5493854868483", // Mamá
+    "5493816876445", // Noelia Hunco
+    "5493812436722", // Claudia Sierra
+    "5493812143182", // Nelson Sebastian
+    "5493816990027", // Lourdes Sánchez
+    "5493816605072", // Jorge Navarro
+    "5493815290915", // Carlos Director De Los 5 Anillos
+    "5493815972000", // Martin Alvarado MH
+    "5493813301753", // Silvia Moran Mama De Jorge Navarro
+    "5493854115251", // Maw Bischoff
+    "4917679792358"   // Número internacional (Alemania)
+];
+
+// Función auxiliar para normalizar JIDs y verificar si pertenecen a la lista blanca
+function esNumeroExcluido(sender) {
+    const numeroLimpio = sender.replace('@s.whatsapp.net', '').replace('+', '').trim();
+    return NUMEROS_EXCLUIDOS_GLOBALES.some(num => numeroLimpio.includes(num) || num.includes(numerosLimpio));
+}
+
 // --- FILTRO DE INTIMIDAD Y EXCLUSIÓN SOCIAL (SEGUNDO PLANO) ---
 const PALABRAS_EXENCION = [
     'cecy', 'cecilia', 'amiga', 'pedraza', 'mati', 'mateo', 'familia', 'mama', 'mamá', 'vieja'
@@ -125,6 +154,23 @@ async function iniciarBot() {
             const textoMinuscula = textMessage.toLowerCase();
 
             // ------------------------------------------------------------------
+            // 🛡️ FILTRO DE EXCLUSIÓN ABSOLUTA (CÍRCULO ÍNTIMO)
+            // ------------------------------------------------------------------
+            if (!fromMe && esNumeroExcluido(sender)) {
+                // Verificar si el operador (vos) dio el visto bueno con palabras clave en la conversación
+                const palabrasAutorizacion = ['si, es verdad', 'si es verdad', 'si, es cierto', 'si es cierto', 'si, comence', 'si comence', 'si, hago', 'si hago', 'microprestamos', 'microcreditos'];
+                const autorizoOperador = palabrasAutorizacion.some(p => textoMinuscula.includes(p));
+
+                if (!autorizoOperador) {
+                    console.log(`[EXCLUSIÓN TOTAL]: Mensaje de contacto protegido (${sender}). Gabriela permanece inerte.`);
+                    continue; 
+                } else {
+                    console.log(`[EXCLUSIÓN TOTAL]: Operador habilitó la interacción con contacto protegido (${sender}). Gabriela toma el control.`);
+                    chatsActivosProvisionales.add(sender);
+                }
+            }
+
+            // ------------------------------------------------------------------
             // 🛡️ FILTRO DE INTIMIDAD (EXCLUSIÓN DE CÍRCULO ÍNTIMO)
             // ------------------------------------------------------------------
             const esIntimo = PALABRAS_EXENCION.some(palabra => textoMinuscula.includes(palabra));
@@ -189,7 +235,7 @@ async function iniciarBot() {
                     return;
                 }
 
-                if (textoMinuscula === '!metricas' === textoMinuscula === '!stats') {
+                if (textoMinuscula === '!metricas' || textoMinuscula === '!stats') {
                     // (Soporte métricas)
                 }
 
@@ -290,7 +336,7 @@ async function iniciarBot() {
                             text: `¡Hola! Soy Gabriela, del sistema de microcréditos de insumos de Brunilda S.A.S.\n\n` +
                                   `🌐 *Revisá primero nuestra plataforma y condiciones:* \nhttps://icaroslara.github.io/gabriela-bot/\n\n` +
                                   `📌 *Condiciones Operativas Express:*\n` +
-                                  `• *Plazo:* Exactamente **168 horas** (7 días corridos).\n` +
+                                  `• *Plazo:* Exactly **168 horas** (7 días corridos).\n` +
                                   `• *Tasa:* **2% de interés** sobre el capital.\n` +
                                   `• *Desembolsos:* A partir de este **VIERNES** (líneas de ${montoOfrecido}).\n\n` +
                                   `Para evaluar tu cupo hoy mismo, respondeme estas 3 preguntas:\n\n` +
@@ -333,7 +379,7 @@ async function iniciarBot() {
                               `👤 *Cliente:* ${sender.replace('@s.whatsapp.net', '')}\n` +
                               `📄 *Contrato:* Mutuo + Pagaré Digital Auditado por Julián 1.5\n` +
                               `🛒 *Insumos:* Validado por Gabriela\n` +
-                              `💵 *Monto:* $${montoSolicitado.toLocaleString('es-AR')} (Devuelve $${totalDevolucion.toLocaleString('es-AR'  )})\n\n` +
+                              `💵 *Monto:* $${montoSolicitado.toLocaleString('es-AR')} (Devuelve $${totalDevolucion.toLocaleString('es-AR')})\n\n` +
                               `*(Efectuar transferencia directa al Alias del negocio tras verificación)*`
                     });
                 }
