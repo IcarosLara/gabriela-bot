@@ -2,6 +2,8 @@ const { makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } = requ
 const axios = require('axios');
 const pino = require('pino');
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 
 const RAILWAY_WEBHOOK_URL = process.env.RAILWAY_WEBHOOK_URL || 'https://gabriela-loan-api-production.up.railway.app/webhook';
 const NUMERO_BOT_WHATSAPP = process.env.NUMERO_BOT || "5493812385889"; 
@@ -24,7 +26,10 @@ function esNumeroExcluido(sender) {
 const chatsEnEvaluacion = new Set();
 
 async function iniciarBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_v2');
+    // Limpieza preventiva de sesión corrupta si existe el flag de error 401
+    const authFolder = path.join(__dirname, 'auth_info_v2');
+
+    const { state, saveCreds } = await useMultiFileAuthState(authFolder);
 
     const sock = makeWASocket({
         logger: pino({ level: 'silent' }),
@@ -36,11 +41,7 @@ async function iniciarBot() {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // ==========================================================================
-    // 🔑 GENERACIÓN DE CÓDIGO DE EMPAREJAMIENTO CON RETARDO ESTABLE (5 MIN)
-    // ==========================================================================
     if (!sock.authState.creds.registered) {
-        // Damos 8 segundos para que el socket abra el handshake de red con Baileys de forma limpia
         setTimeout(async () => {
             try {
                 const phoneNumber = NUMERO_BOT_WHATSAPP.replace(/[^0-9]/g, '');
@@ -51,11 +52,11 @@ async function iniciarBot() {
                 console.log(`\n==================================================`);
                 console.log(`🔑 TU CÓDIGO DE VINCULACIÓN DE WHATSAPP ES: ${code}`);
                 console.log(`==================================================\n`);
-                console.log(`👉 Tienes una ventana operativa amplia. Entra a WhatsApp en tu celular -> Dispositivos vinculados -> Vincular dispositivo -> Vincular con número de teléfono e ingresa este código.`);
+                console.log(`👉 Ingresa este código inmediatamente en WhatsApp -> Dispositivos vinculados -> Vincular con número.`);
             } catch (err) {
-                console.error('[ERROR AL GENERAR CÓDIGO DE EMPAREJAMIENTO - Reintentando en próximo ciclo]:', err.message);
+                console.error('[ERROR AL GENERAR CÓDIGO DE EMPAREJAMIENTO]:', err.message);
             }
-        }, 8000);
+        }, 6000);
     }
 
     sock.ev.on('connection.update', async (update) => {
@@ -63,18 +64,26 @@ async function iniciarBot() {
         
         if (connection === 'close') {
             const statusCode = lastDisconnect?.error?.output?.statusCode;
-            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-            
-            console.log(`[RED]: Conexión cerrada (Código: ${statusCode}). Reconectando automáticamente...`, shouldReconnect);
-            
-            // Si no se deslogueó, extendemos la espera a 10 segundos para no saturar el websocket
-            if (shouldReconnect) {
-                setTimeout(() => iniciarBot(), 10000);
-            } else {
-                console.log('[CRítico]: Sesión cerrada por cierre de sesión institucional. Se requiere limpiar auth_info_v2.');
+            console.log(`[RED]: Conexión cerrada (Código: ${statusCode}).`);
+
+            // Si recibimos 401 (Logged Out / Credencial inválida), barajamos borrando la carpeta de auth
+            if (statusCode === 401) {
+                console.log(`[ALERTA 401]: Credencial rechazada por WhatsApp. Purgando carpeta de sesión corrupta...`);
+                try {
+                    if (fs.existsSync(authFolder)) {
+                        fs.rmSync(authFolder, { recursive: true, force: true });
+                        console.log(`🧹 Carpeta auth_info_v2 purgada con éxito. Reiniciando ciclo limpio...`);
+                    }
+                } catch (cleanErr) {
+                    console.error('[ERROR AL PURGAR SESIÓN]:', cleanErr.message);
+                }
             }
+
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+            setTimeout(() => iniciarBot(), 5000);
+            
         } else if (connection === 'open') {
-            console.log('\n🚀 ¡Gabriela 1.5 conectada con éxito y vinculada mediante Pairing Code!\n');
+            console.log('\n🚀 ¡Gabriela 1.5 conectada con éxito absoluto y lista para operar!\n');
         }
     });
 
@@ -141,7 +150,7 @@ iniciarBot();
 const PORT = process.env.PORT || 8080;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Gabriela WhatsApp Bridge Pairing Core - Brunilda S.A.S.');
+    res.end('Gabriela WhatsApp Bridge Purge Core - Brunilda S.A.S.');
 }).listen(PORT, () => {
     console.log(`🌐 Healthcheck activo en puerto ${PORT}`);
 });
