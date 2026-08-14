@@ -45,10 +45,13 @@ const NUMEROS_EXCLUIDOS_GLOBALES = [
     "4917679792358"   // Número internacional (Alemania)
 ];
 
-// Función auxiliar para normalizar JIDs y verificar si pertenecen a la lista blanca
+// Función auxiliar para normalizar JIDs y verificar si pertenecen a la lista blanca (Parche contra ReferenceError)
 function esNumeroExcluido(sender) {
     const numeroLimpio = sender.replace('@s.whatsapp.net', '').replace('+', '').trim();
-    return NUMEROS_EXCLUIDOS_GLOBALES.some(num => numeroLimpio.includes(num) || num.includes(numerosLimpio));
+    return NUMEROS_EXCLUIDOS_GLOBALES.some(num => {
+        const numAutorizadoLimpio = num.trim();
+        return numeroLimpio.includes(numAutorizadoLimpio) || numAutorizadoLimpio.includes(numeroLimpio);
+    });
 }
 
 // --- FILTRO DE INTIMIDAD Y EXCLUSIÓN SOCIAL (SEGUNDO PLANO) ---
