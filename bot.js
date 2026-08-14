@@ -4,7 +4,6 @@ const pino = require('pino');
 const http = require('http');
 
 const RAILWAY_WEBHOOK_URL = process.env.RAILWAY_WEBHOOK_URL || 'https://gabriela-loan-api-production.up.railway.app/webhook';
-// NÚMERO DE TELÉFONO DEL BOT (Asegúrate de que incluya código de país y área sin ceros ni signos, ej: 5493812385889)
 const NUMERO_BOT_WHATSAPP = process.env.NUMERO_BOT || "5493812385889"; 
 
 const NUMEROS_EXCLUIDOS_GLOBALES = [
@@ -30,38 +29,50 @@ async function iniciarBot() {
     const sock = makeWASocket({
         logger: pino({ level: 'silent' }),
         auth: state,
-        // Usamos un navegador estándar de escritorio para estabilizar la sesión
-        browser: Browsers.macOS('Desktop')
+        browser: Browsers.macOS('Desktop'),
+        markOnlineOnConnect: true,
+        printQRInTerminal: false
     });
 
     sock.ev.on('creds.update', saveCreds);
 
     // ==========================================================================
-    // 🔑 GENERACIÓN FORZADA DEL CÓDIGO DE 8 CARACTERES
+    // 🔑 GENERACIÓN DE CÓDIGO DE EMPAREJAMIENTO CON RETARDO ESTABLE (5 MIN)
     // ==========================================================================
     if (!sock.authState.creds.registered) {
-        // Damos un breve respiro para que la conexión inicialice el socket de emparejamiento
+        // Damos 8 segundos para que el socket abra el handshake de red con Baileys de forma limpia
         setTimeout(async () => {
             try {
                 const phoneNumber = NUMERO_BOT_WHATSAPP.replace(/[^0-9]/g, '');
                 console.log(`\n⏳ Solicitando código de emparejamiento de 8 dígitos para el número: +${phoneNumber}...\n`);
+                
                 const code = await sock.requestPairingCode(phoneNumber);
+                
                 console.log(`\n==================================================`);
                 console.log(`🔑 TU CÓDIGO DE VINCULACIÓN DE WHATSAPP ES: ${code}`);
                 console.log(`==================================================\n`);
-                console.log(`👉 Instrucciones: Entra a WhatsApp en tu celular -> Dispositivos vinculados -> Vincular dispositivo -> Vincular con número de teléfono e ingresa este código.`);
+                console.log(`👉 Tienes una ventana operativa amplia. Entra a WhatsApp en tu celular -> Dispositivos vinculados -> Vincular dispositivo -> Vincular con número de teléfono e ingresa este código.`);
             } catch (err) {
-                console.error('[ERROR AL GENERAR CÓDIGO DE EMPAREJAMIENTO]:', err.message);
+                console.error('[ERROR AL GENERAR CÓDIGO DE EMPAREJAMIENTO - Reintentando en próximo ciclo]:', err.message);
             }
-        }, 4000);
+        }, 8000);
     }
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
+        
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut);
-            console.log('[RED]: Conexión cerrada. Reconectando...', shouldReconnect);
-            if (shouldReconnect) setTimeout(() => iniciarBot(), 5000);
+            const statusCode = lastDisconnect?.error?.output?.statusCode;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+            
+            console.log(`[RED]: Conexión cerrada (Código: ${statusCode}). Reconectando automáticamente...`, shouldReconnect);
+            
+            // Si no se deslogueó, extendemos la espera a 10 segundos para no saturar el websocket
+            if (shouldReconnect) {
+                setTimeout(() => iniciarBot(), 10000);
+            } else {
+                console.log('[CRítico]: Sesión cerrada por cierre de sesión institucional. Se requiere limpiar auth_info_v2.');
+            }
         } else if (connection === 'open') {
             console.log('\n🚀 ¡Gabriela 1.5 conectada con éxito y vinculada mediante Pairing Code!\n');
         }
@@ -127,7 +138,6 @@ async function iniciarBot() {
 
 iniciarBot();
 
-// HEALTHCHECK PARA RAILWAY (Puerto dinámico o 8080)
 const PORT = process.env.PORT || 8080;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
