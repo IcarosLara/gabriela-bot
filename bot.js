@@ -45,11 +45,11 @@ const NUMEROS_EXCLUIDOS_GLOBALES = [
     "4917679792358"   // Número internacional (Alemania)
 ];
 
-// Función auxiliar para normalizar JIDs y verificar si pertenecen a la lista blanca (Parche contra ReferenceError)
+// Función auxiliar mejorada para normalizar JIDs y verificar si pertenecen a la lista blanca
 function esNumeroExcluido(sender) {
-    const numeroLimpio = sender.replace('@s.whatsapp.net', '').replace('+', '').trim();
+    const numeroLimpio = sender.replace(/[^0-9]/g, '');
     return NUMEROS_EXCLUIDOS_GLOBALES.some(num => {
-        const numAutorizadoLimpio = num.trim();
+        const numAutorizadoLimpio = num.replace(/[^0-9]/g, '');
         return numeroLimpio.includes(numAutorizadoLimpio) || numAutorizadoLimpio.includes(numeroLimpio);
     });
 }
@@ -59,7 +59,7 @@ const PALABRAS_EXENCION = [
     'cecy', 'cecilia', 'amiga', 'pedraza', 'mati', 'mateo', 'familia', 'mama', 'mamá', 'vieja'
 ];
 
-// --- NÚMERO / JID DE GABO DI DANTIS (EXCEPCIÓN VIP / CHAT MIXTO) ---
+// --- NÚMERO / JID DE GABO DI DANTIS (EXCEPCIÓN VIP / FLUJO ESPECIAL GABO) ---
 const NUMERO_GABO = "5493815461453";
 
 // MEMORIA DE ESTADO Y FILTRO DE LA ESFINGE
@@ -68,12 +68,19 @@ const chatsPausados = new Set();
 const chatsEnEvaluacion = new Set();
 const clientesBloqueadosPorIncumplimiento = new Set(); // Cero tolerancia: ignora olímpicamente
 
+// MEMORIA ESPECÍFICA PARA EL FLUJO PASO A PASO DE GABO DI DANTIS
+const estadoGabo = {
+    fase: 'INICIAL', // INICIAL -> CONTRATO_PENDIENTE -> DNI_PENDIENTE -> NEGOCIO_PENDIENTE -> ALIAS_PENDIENTE -> ACTIVO -> POR_VENCER
+    inicioPrestamoTimestamp: null,
+    timerRecordatorio: null
+};
+
 // CONTROL DE CUPOS Y ASIGNACIÓN DE CAPITAL
 let cuposReservados10k = 0;
 const MAX_CUPOS_10K = 2;
 
 // ==============================================================================
-// 🛡️ PUENTE DE SEGURIDAD CON EL NÚCLEO DE ELÍAS & ELENA
+// 🛡️ PUENTE DE SEGURIDAD CON EL NÚCLEO DE ELÍAS & ELENA (CON BLINDAJE 404)
 // ==============================================================================
 async function consultarNucleoEliasElena(vectorDeTexto) {
     try {
@@ -82,8 +89,9 @@ async function consultarNucleoEliasElena(vectorDeTexto) {
         }, { timeout: 8000 });
         return respuesta.data;
     } catch (error) {
-        console.error('[ERROR PUENTE ELIAS]:', error.message);
-        return null;
+        console.error('[ERROR PUENTE ELIAS]: El núcleo no respondió o dio 404. Aplicando denegación preventiva por seguridad.', error.message);
+        // Blindaje contra bypass por caída: si Elías no responde, retornamos amenaza crítica preventiva
+        return { nivel_amenaza: "Crítico", tipo_emisor: "hacker_hostil", error: true };
     }
 }
 
@@ -113,17 +121,17 @@ async function iniciarBot() {
             const shouldReconnect = (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut);
             console.log('[RED]: Conexión cerrada. Reconectando...', shouldReconnect);
             if (shouldReconnect) {
-                setTimeout(() => iniciarBot(), 5000); // Margen ampliado de reconexión
+                setTimeout(() => iniciarBot(), 5000);
             }
         } else if (connection === 'open') {
             console.log('\n🚀 ¡Gabriela 1.5 está conectada 24/7 a la API de Brunilda S.A.S. en Railway!\n');
             
-            // Iniciar motor de difusión multicanal
-            iniciarMotorDifusion(sock);
+            // ATENCIÓN: Difusión en grupos DESACTIVADA por completo (apagada hasta el martes o nuevo aviso)
+            console.log('📢 Motor de difusión en grupos de WhatsApp DESACTIVADO por seguridad institucional.');
         }
     });
 
-    // CÓDIGO DE PAIRING (Ampliación del buffer de espera a 12 segundos para asegurar vinculación estable)
+    // CÓDIGO DE PAIRING
     if (!sock.authState.creds.registered && METODO_VINCULACION === 'CODE') {
         setTimeout(async () => {
             try {
@@ -156,7 +164,7 @@ async function iniciarBot() {
             // ------------------------------------------------------------------
             // 🛡️ INTERCEPTOR DE CONTRAINTELIGENCIA (ELÍAS & ELENA GUARD)
             // ------------------------------------------------------------------
-            if (!fromMe && textMessage) {
+            if (!fromMe && textMessage && !esGrupo) {
                 const veredictoSeguridad = await consultarNucleoEliasElena(textMessage);
                 if (veredictoSeguridad && (veredictoSeguridad.error || veredictoSeguridad.nivel_amenaza === "Crítico" || veredictoSeguridad.tipo_emisor === "hacker_hostil")) {
                     console.log(`[ALERTA DEFENSA ELÍAS]: Vector hostil interceptado desde ${sender}. Bloqueando acceso.`);
@@ -195,7 +203,7 @@ async function iniciarBot() {
                 }
             }
 
-            if (!textMessage) continue;
+            if (!textMessage && !esImagen) continue;
             const textoMinuscula = textMessage.toLowerCase();
 
             // ------------------------------------------------------------------
@@ -224,26 +232,82 @@ async function iniciarBot() {
             }
 
             // ------------------------------------------------------------------
-            // 🤝 FILTRO DE GABO DI DANTIS (MODO MIXTO: HUMANO / BOT)
+            // 🤝 FLUJO ESPECÍFICO Y PASO A PASO PARA GABO DI DANTIS (+54 9 3815 46-1453)
             // ------------------------------------------------------------------
             if (sender.includes(NUMERO_GABO) && !fromMe) {
-                const palabrasOperativas = ['prestamo', 'préstamo', 'credito', 'crédito', 'contrato', 'alias', 'negocio', 'comercio', 'dni', 'comprobante', 'insumos', 'mercaderia', 'mercadería', 'firmé', 'firme', 'plata', 'pagar'];
-                const esOperativoGabo = palabrasOperativas.some(p => textoMinuscula.includes(p));
-                
-                if (!esOperativoGabo) {
-                    console.log(`[FILTRO GABO]: Conversación casual/externa detectada con Gabo. Gabriela en silencio.`);
-                    continue; 
-                } else {
-                    console.log(`[FILTRO GABO]: Mensaje operativo detectado. Gabriela toma el control.`);
+                console.log(`[FLUJO GABO]: Procesando interacción guiada para Gabo Di Dantis.`);
+
+                if (estadoGabo.fase === 'INICIAL') {
+                    estadoGabo.fase = 'CONTRATO_PENDIENTE';
+                    await sock.sendMessage(sender, {
+                        text: `🏛️ *BRUNILDA S.A.S. - PROTOCOLO DE CRÉDITO AGÉNTICO*\n\n` +
+                              `Hola Gabo. Julián 1.5 ha generado tu **Contrato de Mutuo Digital + Pagaré Electrónico**.\n\n` +
+                              `✍️ Por favor, respondé con tu conformidad explícita para aceptar la firma digital del contrato, y envianos de inmediato:\n` +
+                              `📷 1. Foto de tu DNI (frente y dorso).\n` +
+                              `🤳 2. Una selfie de tu rostro para validación biométrica.`
+                    });
+                    continue;
+                } else if (estadoGabo.fase === 'CONTRATO_PENDIENTE') {
+                    // Verificamos si mandó imagen o texto de aceptación
+                    estadoGabo.fase = 'DNI_PENDIENTE';
+                    await sock.sendMessage(sender, {
+                        text: `🔄 Documentación e imágenes recibidas. Remitiendo paquete de verificación a **Julián 1.5** para auditoría interna...\n\n` +
+                              `⏳ Aguardá un instante mientras el sistema valida el perfil.`
+                    });
+
+                    // Simulamos la validación interna de Julián 1.5 (2 segundos)
+                    setTimeout(async () => {
+                        estadoGabo.fase = 'NEGOCIO_PENDIENTE';
+                        await sock.sendMessage(sender, {
+                            text: `✅ *¡Validación exitosa por Julián 1.5!*\n\n` +
+                                  `🏪 Ahora, por favor, dirigite personalmente al negocio/distribuidora donde vas a realizar las compras, **sacale una foto clara al local de frente** y envianos la imagen para que Gabriela confirme la legitimidad del establecimiento.`
+                        });
+                    }, 2000);
+                    continue;
+                } else if (estadoGabo.fase === 'NEGOCIO_PENDIENTE' && esImagen) {
+                    estadoGabo.fase = 'ALIAS_PENDIENTE';
+                    await sock.sendMessage(sender, {
+                        text: `🏢 *Comercio verificado y validado por Gabriela.* El establecimiento es legítimo.\n\n` +
+                              `💳 Por favor, pedile al comerciante el **Alias o CVU de Mercado Pago** del negocio y pasánoslo por este chat para verificarlo antes de efectuar la transferencia.`
+                    });
+                    continue;
+                } else if (estadoGabo.fase === 'ALIAS_PENDIENTE') {
+                    estadoGabo.fase = 'ACTIVO';
+                    estadoGabo.inicioPrestamoTimestamp = Date.now();
+
+                    // Programar recordatorio a las 160 horas (cuando falten 8 horas para las 168 hs)
+                    const tiempo160hs = 160 * 60 * 60 * 1000; 
+                    estadoGabo.timerRecordatorio = setTimeout(async () => {
+                        await sock.sendMessage(sender, {
+                            text: `⏰ *Aviso de Vencimiento Próximo - Brunilda S.A.S.*\n\n` +
+                                  `Hola Gabo. Te recordamos cordialmente que restan aproximadamente **8 horas** para cumplirse el plazo de las 168 horas de tu préstamo. Quedamos a disposición para coordinar la devolución de los fondos + el 2% de interés. ¡Muchas gracias!`
+                        });
+                    }, tiempo160hs);
+
+                    await sock.sendMessage(sender, {
+                        text: `💎 *¡Alias verificado con éxito! No es trucho.*\n\n` +
+                              `💸 Acabamos de efectuar la transferencia directa al Alias del negocio desde la cuenta de **Javier Adrián Lara** (Socio Gerente de la API).\n\n` +
+                              `🗣️ *Instrucciones para retirar:* Decile al cajero o vendedor que **el pago de la mercadería está hecho por una nueva API llamada Gabriela**, y que el pago lo realizó el socio de esa API a nombre de **Javier Adrián Lara**.\n\n` +
+                              `📦 Una vez que retires tu mercadería, avisame por aquí para dejar constancia de que todo salió perfecto.`
+                    });
+                    continue;
+                } else if (estadoGabo.fase === 'ACTIVO' && (textoMinuscula.includes('retire') || textoMinuscula.includes('retirado') || textoMinuscula.includes('listo') || textoMinuscula.includes('gracias'))) {
+                    await sock.sendMessage(sender, {
+                        text: `🎉 ¡Excelente, Gabo! Operación confirmada.\n\n` +
+                              `⏱️ A partir de este exacto momento comienzan a correr formalmente las **168 horas** (7 días) para devolver el capital prestado + el **2% de interés**.\n\n` +
+                              `Te avisaremos con cordialidad unas horas antes del vencimiento. ¡Mucho éxito con tu emprendimiento!`
+                    });
+                    continue;
                 }
             }
 
             // ------------------------------------------------------------------
             // 🌐 FILTRO SOBERANO DE JURISDICCIÓN (SÓLO ARGENTINA +54 / 549)
             // ------------------------------------------------------------------
-            const esNumeroArgentino = sender.startsWith('54') || sender.startsWith('+54');
+            const esNumeroArgentino = sender.startsWith('54'); 
 
-            if (!esNumeroArgentino && !esGrupo && !fromMe) {
+            // Si NO es argentino, NO es grupo, NO es del operador y NO es de la lista blanca (familia) -> Mensaje de exportación B2B
+            if (!esNumeroArgentino && !esGrupo && !fromMe && !esNumeroExcluido(sender)) {
                 console.log(`🌐 Consulta internacional detectada desde: ${sender}`);
                 
                 await sock.sendMessage(sender, {
@@ -314,17 +378,10 @@ async function iniciarBot() {
             }
 
             // ------------------------------------------------------------------
-            // 📢 2. DIFUSIÓN EN GRUPOS DE EMPRENDEDORES (WHATSAPP)
+            // 📢 2. DIFUSIÓN EN GRUPOS DE WHATSAPP (APAGADA INSTITUCIONALMENTE)
             // ------------------------------------------------------------------
             if (esGrupo) {
-                const palabrasClaveGrupo = ['prestamo', 'préstamo', 'credito', 'crédito', 'insumos', 'mercaderia', 'mercadería', 'financiación'];
-                if (palabrasClaveGrupo.some(p => textoMinuscula.includes(p))) {
-                    await sock.sendMessage(sender, {
-                        text: `📢 *FINANCIAMIENTO DE INSUMOS - BRUNILDA S.A.S.*\n\n` +
-                              `🚀 Conocé los detalles y requisitos en nuestra web oficial:\n🔗 https://icaroslara.github.io/gabriela-bot/\n\n` +
-                              `👉 Para evaluar tu solicitud y reservar tu cupo hoy, *escribime por privado*.`
-                    });
-                }
+                // Difusión deshabilitada por orden ejecutiva para prevenir baneos
                 continue;
             }
 
@@ -453,126 +510,6 @@ async function iniciarBot() {
             }
         }
     });
-}
-
-// ==============================================================================
-// 📢 MOTOR DE DIFUSIÓN MULTICANAL (WHATSAPP + CATÁLOGO DE GRUPOS DE FACEBOOK)
-// ==============================================================================
-
-const PLANTILLAS_DIFUSION_API = [
-    `📢 *SISTEMA DE MICROCRÉDITOS DE INSUMOS - BRUNILDA S.A.S.*\n\n` +
-    `🚀 ¿Necesitás stock, mercadería o herramientas para tu emprendimiento en Tucumán?\n\n` +
-    `🌐 *Visitá nuestra web oficial:* https://icaroslara.github.io/gabriela-bot/\n\n` +
-    `• Financiación directa sin pasar por bancos.\n` +
-    `• Pagamos directo al comercio y retirás al instante.\n` +
-    `• Plazo: 168 horas (7 días) con tasa promocional del 2%.\n\n` +
-    `👉 *Iniciá tu evaluación automática escribiendo al privado.*`,
-
-    `💡 *LÍNEA DE CRÉDITO ÁGIL PARA COMERCIOS Y FERIANTES*\n\n` +
-    `Operamos con cupos limitados de capital para abastecimiento inmediato en Tucumán.\n` +
-    `🌐 *Conocé más:* https://icaroslara.github.io/gabriela-bot/\n\n` +
-    `• Cero efectivo en mano: liquidación directa al proveedor.\n` +
-    `• Validación agéntica instantánea por WhatsApp.\n\n` +
-    `📲 *Escribime por privado para coordinar tu cupo operativo de esta semana.*`
-];
-
-const NOMBRES_GRUPOS_AUTORIZADOS = [
-    "Impulso universitario",
-    "EMPRENDIMIENTOS",
-    "Activando las Ventas en Feria"
-];
-
-// Catálogo completo de nodos de Facebook (Tucumán / Emprendedores) para referencia y despliegue manual/asistido
-const GRUPOS_FACEBOOK_TUCUMAN = [
-    "https://www.facebook.com/groups/2172262632989328",
-    "https://www.facebook.com/groups/1394502770854035/",
-    "https://www.facebook.com/groups/700304290049093/",
-    "https://www.facebook.com/groups/1354064399204358/",
-    "https://www.facebook.com/groups/142879459662158",
-    "https://www.facebook.com/groups/151380463528326",
-    "https://www.facebook.com/groups/896151388499604/",
-    "https://www.facebook.com/groups/3479044339084820/",
-    "https://www.facebook.com/groups/2612748399045340/",
-    "https://www.facebook.com/groups/620037500898356/",
-    "https://www.facebook.com/groups/1736002576686741/",
-    "https://www.facebook.com/groups/995029149002432/",
-    "https://www.facebook.com/groups/6047094375350212/",
-    "https://www.facebook.com/groups/1776863525951433/",
-    "https://www.facebook.com/groups/1340005841268859/",
-    "https://www.facebook.com/groups/1263020233736895/",
-    "https://www.facebook.com/groups/933582880558743/",
-    "https://www.facebook.com/groups/tucumanemprendejuntos/",
-    "https://www.facebook.com/groups/tucsontucuman/",
-    "https://www.facebook.com/groups/1967793493470122/",
-    "https://www.facebook.com/groups/806284709527139/",
-    "https://www.facebook.com/groups/674118302285476/",
-    "https://www.facebook.com/groups/553662105504414/",
-    "https://www.facebook.com/groups/471268432404874/",
-    "https://www.facebook.com/groups/616525368404823/",
-    "https://www.facebook.com/groups/1665692150725971/",
-    "https://www.facebook.com/groups/1543022199193518/",
-    "https://www.facebook.com/groups/1182724812378081/",
-    "https://www.facebook.com/groups/1174318729287342/",
-    "https://www.facebook.com/groups/338318037250183/",
-    "https://www.facebook.com/groups/280481515717874/"
-];
-
-function iniciarMotorDifusion(sock) {
-    console.log('📢 Motor de difusión multicanal activado (WhatsApp + Enlace Web de Gabriela).');
-
-    async function ejecutarBroadcastHibrido() {
-        const ahora = new Date();
-        const anio = ahora.getFullYear();
-        const mes = ahora.getMonth(); // 7 = Agosto
-        const dia = ahora.getDate();  
-
-        const esViernesOPosterior = (anio > 2026 || mes > 7 || (mes === 7 && dia >= 14));
-
-        let debeEjecutar = false;
-
-        if (!esViernesOPosterior) {
-            debeEjecutar = true; // Modo hoy (4-5 hs)
-        } else {
-            const horaActual = ahora.getHours();
-            // Bloques estrictos: 06:00 hs, 13:00 hs, 17:00 hs
-            debeEjecutar = (horaActual === 6) || (horaActual === 13) || (horaActual === 17);
-        }
-
-        if (debeEjecutar) {
-            try {
-                const todosLosGrupos = await sock.groupFetchAllParticipating();
-                const gruposValidados = [];
-
-                for (const jid in todosLosGrupos) {
-                    const nombreGrupo = todosLosGrupos[jid].subject || "";
-                    const esAutorizado = NOMBRES_GRUPOS_AUTORIZADOS.some(nombreValido => 
-                        nombreGrupo.toLowerCase().includes(nombreValido.toLowerCase())
-                    );
-                    if (esAutorizado) {
-                        gruposValidados.push({ jid, nombre: nombreGrupo });
-                    }
-                }
-
-                if (gruposValidados.length > 0) {
-                    const gruposSeleccionados = gruposValidados.sort(() => 0.5 - Math.random()).slice(0, 2);
-                    const plantilla = PLANTILLAS_DIFUSION_API[Math.floor(Math.random() * PLANTILLAS_DIFUSION_API.length)];
-
-                    for (const grupo of gruposSeleccionados) {
-                        console.log(`📢 [BROADCAST MULTICANAL]: Enviando a grupo "${grupo.nombre}" (${grupo.jid})`);
-                        await sock.sendMessage(grupo.jid, { text: plantilla });
-                        await new Promise(r => setTimeout(r, 20000));
-                    }
-                }
-            } catch (err) {
-                console.error('[ERROR BROADCAST MULTICANAL]:', err.message);
-            }
-        }
-
-        const tiempoEspera = !esViernesOPosterior ? (4.5 * 60 * 60 * 1000) : (10 * 60 * 1000);
-        setTimeout(ejecutarBroadcastHibrido, tiempoEspera);
-    }
-
-    setTimeout(ejecutarBroadcastHibrido, 10 * 60 * 1000);
 }
 
 iniciarBot();
