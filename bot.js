@@ -6,7 +6,11 @@ const fs = require('fs');
 const path = require('path');
 
 const RAILWAY_WEBHOOK_URL = process.env.RAILWAY_WEBHOOK_URL || 'https://gabriela-loan-api-production.up.railway.app/webhook';
-const NUMERO_BOT_WHATSAPP = process.env.NUMERO_BOT || "5493812385889"; 
+
+// ==============================================================================
+// 🎯 NÚMERO OPERATIVO DEL BOT (ASIGNACIÓN EXPLÍCITA LÍNEA C)
+// ==============================================================================
+const NUMERO_BOT_WHATSAPP = "5493812385889"; 
 
 const NUMEROS_EXCLUIDOS_GLOBALES = [
     "5493815115726", "5493815201497", "5493813218727", "5493815464065",
@@ -26,9 +30,7 @@ function esNumeroExcluido(sender) {
 const chatsEnEvaluacion = new Set();
 
 async function iniciarBot() {
-    // Limpieza preventiva de sesión corrupta si existe el flag de error 401
     const authFolder = path.join(__dirname, 'auth_info_v2');
-
     const { state, saveCreds } = await useMultiFileAuthState(authFolder);
 
     const sock = makeWASocket({
@@ -66,7 +68,6 @@ async function iniciarBot() {
             const statusCode = lastDisconnect?.error?.output?.statusCode;
             console.log(`[RED]: Conexión cerrada (Código: ${statusCode}).`);
 
-            // Si recibimos 401 (Logged Out / Credencial inválida), barajamos borrando la carpeta de auth
             if (statusCode === 401) {
                 console.log(`[ALERTA 401]: Credencial rechazada por WhatsApp. Purgando carpeta de sesión corrupta...`);
                 try {
