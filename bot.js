@@ -2,36 +2,29 @@ const { makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } = requ
 const axios = require('axios');
 const pino = require('pino');
 const http = require('http');
-const fs = require('fs');
-const path = require('path');
 
 const RAILWAY_WEBHOOK_URL = process.env.RAILWAY_WEBHOOK_URL || 'https://gabriela-loan-api-production.up.railway.app/webhook';
-const NUMERO_BOT = "5493812385889"; // Tu número institucional blindado
+const NUMERO_BOT = "5493812385889"; 
 
 async function iniciarBot() {
-    const authFolder = path.join(__dirname, 'auth_info_v2');
-    const { state, saveCreds } = await useMultiFileAuthState(authFolder);
+    // Usamos el gestor de estado nativo sin borrados forzados que rompan el hilo
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_v2');
 
     const sock = makeWASocket({
         logger: pino({ level: 'silent' }),
         auth: state,
-        // Forzamos un navegador de escritorio para mayor compatibilidad
         browser: Browsers.macOS('Desktop'),
         printQRInTerminal: false 
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    // ==========================================================================
-    // 🔑 FORZADO DE PAIRING CODE (BYPASS QR)
-    // ==========================================================================
     if (!sock.authState.creds.registered) {
         setTimeout(async () => {
             try {
                 const phoneNumber = NUMERO_BOT.replace(/[^0-9]/g, '');
                 console.log(`\n⏳ Solicitando Código de Vinculación para: +${phoneNumber}...\n`);
                 
-                // Esta línea genera el código de 8 caracteres que verás en los logs
                 const code = await sock.requestPairingCode(phoneNumber);
                 
                 console.log(`\n==================================================`);
@@ -46,22 +39,54 @@ async function iniciarBot() {
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
+        
         if (connection === 'close') {
             const statusCode = lastDisconnect?.error?.output?.statusCode;
-            if (statusCode === 401) {
-                console.log(`[401] Sesión inválida. Purgando auth_info_v2...`);
-                fs.rmSync(authFolder, { recursive: true, force: true });
+            console.log(`[RED]: Conexión cerrada. Código de salida: ${statusCode}`);
+            
+            // Reconexión limpia sin colisionar archivos
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+            if (shouldReconnect) {
+                setTimeout(() => iniciarBot(), 6000);
+            } else {
+                console.log('[CRÍTICO]: Sesión invalidada por el servidor. Reinicie el contenedor en Railway tras limpiar volúmenes.');
             }
-            setTimeout(() => iniciarBot(), 5000);
         } else if (connection === 'open') {
-            console.log('\n🚀 ¡CONEXIÓN ESTABLECIDA EXITOSAMENTE!\n');
+            console.log('\n🚀 ¡CONEXIÓN ESTABLECIDA CON ÉXITO ABSOLUTO!\n');
         }
     });
-    
-    // Aquí iría tu lógica de mensajes...
+
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+        if (type !== 'notify') return;
+        for (const msg of messages) {
+            if (!msg.message) continue;
+            const sender = msg.key.remoteJid;
+            const textMessage = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
+            if (!textMessage || msg.key.fromMe) continue;
+
+            try {
+                const response = await axios.post(RAILWAY_WEBHOOK_URL, {
+                    sender: sender,
+                    message: textMessage
+                }, { timeout: 8000 });
+
+                if (response.data && response.data.respuesta_bot) {
+                    await sock.sendMessage(sender, { text: response.data.respuesta_bot });
+                }
+            } catch (err) {
+                console.error('[API WEBHOOK ERROR]:', err.message);
+            }
+        }
+    });
 }
 
 iniciarBot();
 
-// Healthcheck minimalista para Railway
-http.createServer((req, res) => { res.end('OK'); }).listen(process.env.PORT || 8080);
+// Healthcheck blindado para Railway en puerto 8080
+const PORT = process.env.PORT || 8080;
+http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Gabriela Stable Core - Brunilda S.A.S.');
+}).listen(PORT, () => {
+    console.log(`🌐 Healthcheck activo en puerto ${PORT}`);
+});
