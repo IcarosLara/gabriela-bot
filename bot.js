@@ -7,8 +7,14 @@ const fs = require('fs');
 const NUMERO_OPERADOR = "5493812385889"; 
 const LINK_CONTRATO = "https://docs.google.com/forms/d/1xMQwxWzehYW2NbYt87lreaATKHyWYkp2fMuBgXvJBXE/viewform";
 
-// CONFIGURACIÓN DE SEGURIDAD Y CUPOS
-const GRUPOS_AUTORIZADOS = ["120363000000000000@g.us", "120363000000000001@g.us", "120363000000000002@g.us"];
+// CONFIGURACIÓN DE SEGURIDAD Y CUPOS (Brunilda S.A.S.)
+// GRUPO 1: Impulso universitario | GRUPO 2: Emprendimientos (Centro de Estudiantes) | GRUPO 3: ICV Chat Post-Incubacion
+const GRUPO_UNIVERSITARIO = "120363000000000000@g.us"; 
+const GRUPO_EMPRENDIMIENTOS = "120363000000000001@g.us"; 
+const GRUPO_ICV = "120363000000000002@g.us";
+
+const GRUPOS_AUTORIZADOS = [GRUPO_UNIVERSITARIO, GRUPO_EMPRENDIMIENTOS, GRUPO_ICV];
+
 const LIMITE_SEMANAL = 50000;
 let dineroPrestado = 10000; // Gabo ya aprobado
 let modoIA_Activado = false; // Controla si Gabriela toma el mando en privado
@@ -24,7 +30,7 @@ async function iniciarBot() {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Espera de 60s para evitar rebote de IP en Railway
+    // Espera de 60s para evitar rebote de IP si se conecta en la nube
     if (!sock.authState.creds.registered) {
         setTimeout(async () => {
             try {
@@ -43,10 +49,18 @@ async function iniciarBot() {
             const text = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
             const isGroup = senderJid.endsWith('@g.us');
 
-            // 1. LÓGICA DE GRUPOS (Proactividad controlada)
+            // 1. LÓGICA DE GRUPOS (Respuestas contextuales según el espacio)
             if (isGroup && GRUPOS_AUTORIZADOS.includes(senderJid)) {
-                if (text.toLowerCase().includes('hola')) {
-                    await sock.sendMessage(senderJid, { text: "🤖 Hola, soy Gabriela, IA de Brunilda S.A.S. Ayudo a emprendedores y dueños de locales a financiar insumos de forma rápida. Si necesitas capital para tu negocio, escríbeme al privado y te explico cómo calificar." });
+                if (text.toLowerCase().includes('hola') || text.toLowerCase().includes('prestamo') || text.toLowerCase().includes('insumos')) {
+                    
+                    let mensajeGrupo = "🤖 Hola, soy Gabriela, IA de Brunilda S.A.S. Ayudo a emprendedores a financiar insumos de forma rápida. Escríbeme al privado para más info.";
+                    
+                    // Si el mensaje ocurre en el Grupo ICV, aplicamos la directriz específica de Argentina y fase de pruebas
+                    if (senderJid === GRUPO_ICV) {
+                        mensajeGrupo = "🇦🇷 ¡Hola a todos! Soy Gabriela, IA asistente de Brunilda S.A.S. Les cuento que por el momento estamos operando en fase de pruebas con micropréstamos para emprendedores en *Argentina*. Si a alguno le interesa conocer cómo financiamos insumos de forma rápida, comuníquese de forma interna con nuestro director, *Javier Adrian Lara*. 🤝";
+                    }
+
+                    await sock.sendMessage(senderJid, { text: mensajeGrupo });
                 }
             }
 
@@ -54,17 +68,17 @@ async function iniciarBot() {
             if (!isGroup) {
                 if (text.toLowerCase().includes('ok, si queres saber mas sobre los prestamos, te dejo con gabriela')) {
                     modoIA_Activado = true;
-                    await sock.sendMessage(senderJid, { text: "✅ Entendido. Soy Gabriela, tu IA asistente. A partir de ahora te guiaré con tu solicitud. ¿Qué insumos necesita financiar tu local?" });
+                    await sock.sendMessage(senderJid, { text: "✅ Entendido. Soy Gabriela, tu IA asistente de Brunilda S.A.S. A partir de ahora te guiaré con tu solicitud de microcrédito. ¿Qué insumos o mercadería necesita financiar tu local?" });
                     continue;
                 }
 
                 if (modoIA_Activado) {
                     const cupoDisponible = LIMITE_SEMANAL - dineroPrestado;
-                    if (text.toLowerCase().includes('credito') || text.toLowerCase().includes('prestamo')) {
+                    if (text.toLowerCase().includes('credito') || text.toLowerCase().includes('prestamo') || text.toLowerCase().includes('insumos')) {
                         if (cupoDisponible <= 0) {
-                            await sock.sendMessage(senderJid, { text: "⚠️ Cupo semanal agotado. Volvemos a operar en el próximo ciclo." });
+                            await sock.sendMessage(senderJid, { text: "⚠️ Sistema de Fondeo: Cupo semanal agotado ($50.000). Volvemos a operar en el próximo ciclo." });
                         } else {
-                            await sock.sendMessage(senderJid, { text: `Cupo disponible: $${cupoDisponible}. Completa el contrato aquí: ${LINK_CONTRATO}` });
+                            await sock.sendMessage(senderJid, { text: `📊 *Brunilda S.A.S. - Sistema Julián 1.5*\n\nCupo semanal disponible: $${cupoDisponible} ARS.\n\nPara avanzar con tu legajo, completa el Contrato de Mutuo aquí:\n${LINK_CONTRATO}\n\nUna vez firmado, envíame tu CUIT, foto del frente de tu local y tu Alias (Mercado Pago/Naranja X).` });
                         }
                     }
                 }
