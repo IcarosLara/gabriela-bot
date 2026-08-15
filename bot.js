@@ -2,27 +2,19 @@ const { makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } = requ
 const axios = require('axios');
 const pino = require('pino');
 const http = require('http');
+const fs = require('fs');
 
-const RAILWAY_WEBHOOK_URL = process.env.RAILWAY_WEBHOOK_URL || 'https://gabriela-loan-api-production.up.railway.app/webhook';
-const NUMERO_BOT = "5493812385889"; 
+const NUMERO_OPERADOR = "5493812385889"; 
+const LINK_CONTRATO = "https://docs.google.com/forms/d/1xMQwxWzehYW2NbYt87lreaATKHyWYkp2fMuBgXvJBXE/viewform";
 
-// Lista blanca de los 3 grupos de WhatsApp autorizados para Gabriela-Bot
-const GRUPOS_AUTORIZADOS = [
-    "120363000000000000@g.us", // [Reemplazar con el JID del Grupo 1]
-    "120363000000000001@g.us", // [Reemplazar con el JID del Grupo 2]
-    "120363000000000002@g.us"  // [Reemplazar con el JID del Grupo 3]
-];
-
-// Enlace oficial del Google Forms (Contrato de Mutuo Blindado - Ley Argentina)
-const LINK_CONTRATO_MUTUO = "https://docs.google.com/forms/d/1xMQwxWzehYW2NbYt87lreaATKHyWYkp2fMuBgXvJBXE/viewform";
-
-// MÓDULO CONTABLE DE LÍMITES SEMANALES (Brunilda S.A.S.)
-const LIMITE_SEMANAL_TOTAL = 50000;
-let dineroPrestadoActual = 10000; // Arranca en 10.000 por el caso de Gabo ya aprobado
+// CONFIGURACIÓN DE SEGURIDAD Y CUPOS
+const GRUPOS_AUTORIZADOS = ["120363000000000000@g.us", "120363000000000001@g.us", "120363000000000002@g.us"];
+const LIMITE_SEMANAL = 50000;
+let dineroPrestado = 10000; // Gabo ya aprobado
+let modoIA_Activado = false; // Controla si Gabriela toma el mando en privado
 
 async function iniciarBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_v2');
-
     const sock = makeWASocket({
         logger: pino({ level: 'silent' }),
         auth: state,
@@ -32,109 +24,54 @@ async function iniciarBot() {
 
     sock.ev.on('creds.update', saveCreds);
 
+    // Espera de 60s para evitar rebote de IP en Railway
     if (!sock.authState.creds.registered) {
-        // Espera de seguridad de 60 segundos para evitar el rebote de IP en Railway
         setTimeout(async () => {
             try {
-                const phoneNumber = NUMERO_BOT.replace(/[^0-9]/g, '');
-                console.log(`\n⏳ Espera de seguridad completada. Solicitando vinculación para: +${phoneNumber}...\n`);
-                
-                const code = await sock.requestPairingCode(phoneNumber);
-                
-                console.log(`\n==================================================`);
-                console.log(`🔑 CÓDIGO DE VINCULACIÓN DE 8 CARACTERES: ${code}`);
-                console.log(`==================================================\n`);
-                console.log(`👉 EN TU CELULAR: WhatsApp > Dispositivos Vinculados > Vincular con número.`);
-            } catch (err) {
-                console.error('[ERROR DE VINCULACIÓN]:', err.message);
-            }
-        }, 60000); // 60 segundos de espera exacta
+                const code = await sock.requestPairingCode(NUMERO_OPERADOR);
+                console.log(`\n🔑 CÓDIGO DE VINCULACIÓN: ${code}\n`);
+            } catch (err) { console.error('Error:', err.message); }
+        }, 60000);
     }
-
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
-        
-        if (connection === 'close') {
-            const statusCode = lastDisconnect?.error?.output?.statusCode;
-            console.log(`[RED]: Conexión cerrada. Código de salida: ${statusCode}`);
-            
-            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-            if (shouldReconnect) {
-                setTimeout(() => iniciarBot(), 6000);
-            } else {
-                console.log('[CRÍTICO]: Sesión invalidada. Limpie volúmenes y reinicie el contenedor en Railway.');
-            }
-        } else if (connection === 'open') {
-            console.log('\n🚀 ¡CONEXIÓN ESTABLECIDA CON ÉXITO ABSOLUTO (BRUNILDA S.A.S.)!\n');
-        }
-    });
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
         for (const msg of messages) {
-            if (!msg.message) continue;
+            if (!msg.message || msg.key.fromMe) continue;
             
             const senderJid = msg.key.remoteJid;
+            const text = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
             const isGroup = senderJid.endsWith('@g.us');
-            const textMessage = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
-            
-            if (!textMessage || msg.key.fromMe) continue;
 
-            // REGLA DE ORO DE SEGURIDAD: Bloquear chats privados y exigir lista blanca de grupos
-            if (!isGroup || !GRUPOS_AUTORIZADOS.includes(senderJid)) {
-                continue;
-            }
-
-            console.log(`[MENSAJE AUTORIZADO EN GRUPO]: ${textMessage}`);
-
-            let respuestaAutomatica = null;
-            const lowerMsg = textMessage.toLowerCase();
-
-            // 1. Presentación magnética de la IA
-            if (lowerMsg.includes('hola gabriela') || lowerMsg.includes('quien sos') || lowerMsg.includes('que haces') || lowerMsg.includes('bot')) {
-                respuestaAutomatica = `🤖 *Hola, soy Gabriela, IA de asistencia para Brunilda S.A.S.*\n\nMi trabajo es asegurar que ningún emprendedor o dueño de local se quede sin mercadería o insumos por falta de liquidez momentánea (operando para Argentina).\n\nSi necesitas capital rápido para comprar lo que te hace falta, escríbeme al privado (DM) y te explico cómo calificar al cupo inicial. ¡Hablemos por privado!`;
-            } 
-            // 2. Disparador de microcréditos con control de cupo semanal ($40.000 disponibles)
-            else if (lowerMsg.includes('credito') || lowerMsg.includes('prestamo') || lowerMsg.includes('plata') || lowerMsg.includes('quiero') || lowerMsg.includes('insumos')) {
-                
-                const cupoDisponible = LIMITE_SEMANAL_TOTAL - dineroPrestadoActual;
-
-                if (cupoDisponible <= 0) {
-                    respuestaAutomatica = `🤖 *Sistema de Microcréditos - Brunilda S.A.S.*\n\n⚠️ Cupo semanal de fondeo completo ($50.000). No hay disponibilidad de nuevos préstamos por esta semana hasta el reinicio del ciclo.`;
-                } else {
-                    respuestaAutomatica = `🤖 *Sistema de Microcréditos - Brunilda S.A.S.*\n\nCupo semanal disponible: $${cupoDisponible} ARS.\n\nPara iniciar tu legajo comercial, debes firmar digitalmente el Contrato de Mutuo (plazo estricto de 168 horas con 2% de interés).\n\n📄 Completa el formulario legal aquí:\n${LINK_CONTRATO_MUTUO}\n\nUna vez firmado, envíame por mensaje privado tu CUIT, foto del local y el Alias para validación.`;
+            // 1. LÓGICA DE GRUPOS (Proactividad controlada)
+            if (isGroup && GRUPOS_AUTORIZADOS.includes(senderJid)) {
+                if (text.toLowerCase().includes('hola')) {
+                    await sock.sendMessage(senderJid, { text: "🤖 Hola, soy Gabriela, IA de Brunilda S.A.S. Ayudo a emprendedores y dueños de locales a financiar insumos de forma rápida. Si necesitas capital para tu negocio, escríbeme al privado y te explico cómo calificar." });
                 }
             }
 
-            if (respuestaAutomatica) {
-                await sock.sendMessage(senderJid, { text: respuestaAutomatica });
-                continue;
-            }
-
-            // Derivación al Webhook general
-            try {
-                const response = await axios.post(RAILWAY_WEBHOOK_URL, {
-                    sender: senderJid,
-                    message: textMessage
-                }, { timeout: 8000 });
-
-                if (response.data && response.data.respuesta_bot) {
-                    await sock.sendMessage(senderJid, { text: response.data.respuesta_bot });
+            // 2. LÓGICA DE PRIVADO (El "Director" controla la transferencia a Gabriela)
+            if (!isGroup) {
+                if (text.toLowerCase().includes('ok, si queres saber mas sobre los prestamos, te dejo con gabriela')) {
+                    modoIA_Activado = true;
+                    await sock.sendMessage(senderJid, { text: "✅ Entendido. Soy Gabriela, tu IA asistente. A partir de ahora te guiaré con tu solicitud. ¿Qué insumos necesita financiar tu local?" });
+                    continue;
                 }
-            } catch (err) {
-                console.error('[API WEBHOOK ERROR]:', err.message);
+
+                if (modoIA_Activado) {
+                    const cupoDisponible = LIMITE_SEMANAL - dineroPrestado;
+                    if (text.toLowerCase().includes('credito') || text.toLowerCase().includes('prestamo')) {
+                        if (cupoDisponible <= 0) {
+                            await sock.sendMessage(senderJid, { text: "⚠️ Cupo semanal agotado. Volvemos a operar en el próximo ciclo." });
+                        } else {
+                            await sock.sendMessage(senderJid, { text: `Cupo disponible: $${cupoDisponible}. Completa el contrato aquí: ${LINK_CONTRATO}` });
+                        }
+                    }
+                }
             }
         }
     });
 }
 
 iniciarBot();
-
-// Healthcheck institucional para Railway en puerto 8080
-const PORT = process.env.PORT || 8080;
-http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Gabriela Stable Core v1.5 - Brunilda S.A.S. Online');
-}).listen(PORT, () => {
-    console.log(`🌐 Healthcheck activo en puerto ${PORT}`);
-});
+http.createServer((req, res) => res.end('Brunilda S.A.S. Online')).listen(8080);
