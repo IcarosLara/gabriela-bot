@@ -6,9 +6,9 @@ const fs = require('fs');
 
 const NUMERO_OPERADOR = "5493812385889"; 
 const LINK_CONTRATO = "https://docs.google.com/forms/d/1xMQwxWzehYW2NbYt87lreaATKHyWYkp2fMuBgXvJBXE/viewform";
+const DB_FILE = './clientes_db.json';
 
 // CONFIGURACIÓN DE SEGURIDAD Y CUPOS (Brunilda S.A.S.)
-// GRUPO 1: Impulso universitario | GRUPO 2: Emprendimientos (Centro de Estudiantes) | GRUPO 3: ICV Chat Post-Incubacion
 const GRUPO_UNIVERSITARIO = "120363000000000000@g.us"; 
 const GRUPO_EMPRENDIMIENTOS = "120363000000000001@g.us"; 
 const GRUPO_ICV = "120363000000000002@g.us";
@@ -19,7 +19,41 @@ const LIMITE_SEMANAL = 50000;
 let dineroPrestado = 10000; // Gabo ya aprobado
 let modoIA_Activado = false; // Controla si Gabriela toma el mando en privado
 
+// --- MÓDULO DE PERSISTENCIA AUTOMÁTICA (Notebook MML / JSON) ---
+function inicializarBaseDeDatos() {
+    if (!fs.existsSync(DB_FILE)) {
+        const estructuraInicial = { clientes: [] };
+        fs.writeFileSync(DB_FILE, JSON.stringify(estructuraInicial, null, 2), 'utf8');
+    }
+}
+
+function registrarOActualizarCliente(datosCliente) {
+    inicializarBaseDeDatos();
+    const contenido = fs.readFileSync(DB_FILE, 'utf8');
+    const db = JSON.parse(contenido);
+
+    // Buscamos si el cliente ya existe por su CUIT o número
+    const index = db.clientes.findIndex(c => c.contacto === datosCliente.contacto);
+
+    if (index !== -1) {
+        // Actualizamos datos existentes
+        db.clientes[index] = { ...db.clientes[index], ...datosCliente, ultimaActualizacion: new Date().toISOString() };
+    } else {
+        // Agregamos nuevo cliente
+        db.clientes.push({
+            ...datosCliente,
+            fechaRegistro: new Date().toISOString(),
+            estado: "Activo / Al Día",
+            ciclosCompletados: 0
+        });
+    }
+
+    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
+}
+// ---------------------------------------------------------------
+
 async function iniciarBot() {
+    inicializarBaseDeDatos();
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_v2');
     const sock = makeWASocket({
         logger: pino({ level: 'silent' }),
@@ -30,7 +64,6 @@ async function iniciarBot() {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Espera de 60s para evitar rebote de IP si se conecta en la nube
     if (!sock.authState.creds.registered) {
         setTimeout(async () => {
             try {
@@ -49,13 +82,12 @@ async function iniciarBot() {
             const text = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
             const isGroup = senderJid.endsWith('@g.us');
 
-            // 1. LÓGICA DE GRUPOS (Respuestas contextuales según el espacio)
+            // 1. LÓGICA DE GRUPOS
             if (isGroup && GRUPOS_AUTORIZADOS.includes(senderJid)) {
                 if (text.toLowerCase().includes('hola') || text.toLowerCase().includes('prestamo') || text.toLowerCase().includes('insumos')) {
                     
                     let mensajeGrupo = "🤖 Hola, soy Gabriela, IA de Brunilda S.A.S. Ayudo a emprendedores a financiar insumos de forma rápida. Escríbeme al privado para más info.";
                     
-                    // Si el mensaje ocurre en el Grupo ICV, aplicamos la directriz específica de Argentina y fase de pruebas
                     if (senderJid === GRUPO_ICV) {
                         mensajeGrupo = "🇦🇷 ¡Hola a todos! Soy Gabriela, IA asistente de Brunilda S.A.S. Les cuento que por el momento estamos operando en fase de pruebas con micropréstamos para emprendedores en *Argentina*. Si a alguno le interesa conocer cómo financiamos insumos de forma rápida, comuníquese de forma interna con nuestro director, *Javier Adrian Lara*. 🤝";
                     }
@@ -64,11 +96,14 @@ async function iniciarBot() {
                 }
             }
 
-            // 2. LÓGICA DE PRIVADO (El "Director" controla la transferencia a Gabriela)
+            // 2. LÓGICA DE PRIVADO
             if (!isGroup) {
                 if (text.toLowerCase().includes('ok, si queres saber mas sobre los prestamos, te dejo con gabriela')) {
                     modoIA_Activado = true;
                     await sock.sendMessage(senderJid, { text: "✅ Entendido. Soy Gabriela, tu IA asistente de Brunilda S.A.S. A partir de ahora te guiaré con tu solicitud de microcrédito. ¿Qué insumos o mercadería necesita financiar tu local?" });
+                    
+                    // Registramos automáticamente el contacto en la base de datos local
+                    registrarOActualizarCliente({ contacto: senderJid, estadoConversacion: "Iniciado" });
                     continue;
                 }
 
