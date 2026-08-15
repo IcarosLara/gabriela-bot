@@ -33,10 +33,11 @@ async function iniciarBot() {
     sock.ev.on('creds.update', saveCreds);
 
     if (!sock.authState.creds.registered) {
+        // Espera de seguridad de 60 segundos para evitar el rebote de IP en Railway
         setTimeout(async () => {
             try {
                 const phoneNumber = NUMERO_BOT.replace(/[^0-9]/g, '');
-                console.log(`\n⏳ Solicitando Código de Vinculación para: +${phoneNumber}...\n`);
+                console.log(`\n⏳ Espera de seguridad completada. Solicitando vinculación para: +${phoneNumber}...\n`);
                 
                 const code = await sock.requestPairingCode(phoneNumber);
                 
@@ -45,9 +46,9 @@ async function iniciarBot() {
                 console.log(`==================================================\n`);
                 console.log(`👉 EN TU CELULAR: WhatsApp > Dispositivos Vinculados > Vincular con número.`);
             } catch (err) {
-                console.error('[ERROR AL SOLICITAR CÓDIGO]:', err.message);
+                console.error('[ERROR DE VINCULACIÓN]:', err.message);
             }
-        }, 5000);
+        }, 60000); // 60 segundos de espera exacta
     }
 
     sock.ev.on('connection.update', (update) => {
